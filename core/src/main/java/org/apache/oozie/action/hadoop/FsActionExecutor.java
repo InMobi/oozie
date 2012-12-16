@@ -58,10 +58,10 @@ public class FsActionExecutor extends ActionExecutor {
                                                   "Missing scheme in path [{0}]", path);
             }
             else {
-                if (!scheme.equals("hdfs")) {
-                    throw new ActionExecutorException(ActionExecutorException.ErrorType.ERROR, "FS002",
-                                                      "Scheme [{0}] not supported in path [{1}]", scheme, path);
-                }
+//                if (!scheme.equals("hdfs")&&!scheme.equals("s3")&&!scheme.equals("s3n")) {
+//                    throw new ActionExecutorException(ActionExecutorException.ErrorType.ERROR, "FS002",
+//                                                      "Scheme [{0}] not supported in path [{1}]", scheme, path);
+//                }
             }
         }
         else { 
