@@ -34,6 +34,9 @@ public class FileSystemActions {
 
     public FileSystemActions() {
         supportedFileSystems.add("hdfs");
+        supportedFileSystems.add("s3n");
+        supportedFileSystems.add("s3");
+        supportedFileSystems.add("s4");
     }
 
     public FileSystemActions(Set<String> fileSystems) {
