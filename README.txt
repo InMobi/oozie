@@ -3,6 +3,7 @@ Apache Oozie
 
 What is Oozie
 --------------
+-This is a patched version of oozie-
 
 Oozie is an extensible, scalable and reliable system to define, manage, schedule, and execute complex Hadoop workloads via web services. More specifically, this includes:
 
