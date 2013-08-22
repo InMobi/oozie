@@ -20,6 +20,8 @@ package org.apache.oozie.action.oozie;
 import org.apache.oozie.action.hadoop.ActionExecutorTestCase;
 import org.apache.oozie.WorkflowJobBean;
 import org.apache.oozie.WorkflowActionBean;
+import org.apache.oozie.service.Services;
+import org.apache.oozie.service.WorkflowAppService;
 import org.apache.oozie.util.XConfiguration;
 import org.apache.oozie.client.OozieClient;
 import org.apache.oozie.client.WorkflowAction;
@@ -27,7 +29,6 @@ import org.apache.oozie.client.WorkflowJob;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.FileSystem;
-
 import java.io.File;
 import java.io.StringReader;
 import java.io.Writer;
@@ -229,7 +230,7 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
         writer.close();
 
         XConfiguration protoConf = getBaseProtoConf();
-        WorkflowJobBean workflow = createBaseWorkflow(protoConf, "W");
+        final WorkflowJobBean workflow = createBaseWorkflow(protoConf, "W");
         String defaultConf = workflow.getConf();
         XConfiguration newConf = new XConfiguration(new StringReader(defaultConf));
         String actionConf = "<sub-workflow xmlns='uri:oozie:workflow:0.1' name='subwf'>" +
@@ -246,13 +247,20 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
         action.setConf(actionConf);
 
         // negative test
-        SubWorkflowActionExecutor subWorkflow = new SubWorkflowActionExecutor();
+        final SubWorkflowActionExecutor subWorkflow = new SubWorkflowActionExecutor();
         workflow.setConf(newConf.toXmlString());
 
         subWorkflow.start(new Context(workflow, action), action);
 
         OozieClient oozieClient = subWorkflow.getWorkflowClient(new Context(workflow, action),
                                                                       SubWorkflowActionExecutor.LOCAL);
+        waitFor(5000, new Predicate() {
+            @Override
+            public boolean evaluate() throws Exception {
+                subWorkflow.check(new Context(workflow, action), action);
+                return action.getStatus() == WorkflowActionBean.Status.DONE;
+            }
+        });
 
         subWorkflow.check(new Context(workflow, action), action);
         subWorkflow.end(new Context(workflow, action), action);
@@ -267,7 +275,7 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
         // positive test
         newConf.set(OozieClient.GROUP_NAME, getTestGroup());
         workflow.setConf(newConf.toXmlString());
-        WorkflowActionBean action1 = new WorkflowActionBean();
+        final WorkflowActionBean action1 = new WorkflowActionBean();
         action1.setConf(actionConf);
         action1.setId("W1");
 
@@ -275,6 +283,14 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
 
         oozieClient = subWorkflow.getWorkflowClient(new Context(workflow, action1),
                                                                       SubWorkflowActionExecutor.LOCAL);
+
+        waitFor(5000, new Predicate() {
+            @Override
+            public boolean evaluate() throws Exception {
+                subWorkflow.check(new Context(workflow, action1), action1);
+                return action1.getStatus() == WorkflowActionBean.Status.DONE;
+            }
+        });
 
         subWorkflow.check(new Context(workflow, action1), action1);
         subWorkflow.end(new Context(workflow, action1), action1);
@@ -333,5 +349,53 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
         WorkflowJob wf = oozieClient.getJobInfo(action.getExternalId());
         Configuration childConf = new XConfiguration(new StringReader(wf.getConf()));
         assertNull(childConf.get("abc"));
+    }
+
+    public void testSubworkflowLib() throws Exception {
+        XConfiguration protoConf = getBaseProtoConf();
+        WorkflowJobBean workflow = createBaseWorkflow(protoConf, "W");
+        FileSystem fs = getFileSystem();
+        Path parentLibJar = new Path(getFsTestCaseDir(), "lib/parentLibrary.jar");
+        fs.create(parentLibJar);
+        assertTrue(fs.exists(parentLibJar));
+        String defaultConf = workflow.getConf();
+        XConfiguration newConf = new XConfiguration(new StringReader(defaultConf));
+        newConf.set(OozieClient.LIBPATH, parentLibJar.getParent().toString());
+        workflow.setConf(newConf.toXmlString());
+
+        Path subWorkflowAppPath = new Path(getFsTestCaseDir().toString(), "subwf");
+        Writer writer = new OutputStreamWriter(fs.create(new Path(subWorkflowAppPath, "workflow.xml")));
+        writer.write(APP1);
+        writer.close();
+        Path subwfLibJar = new Path(subWorkflowAppPath, "lib/subwfLibrary.jar");
+        fs.create(subwfLibJar);
+        assertTrue(fs.exists(subwfLibJar));
+
+        final WorkflowActionBean action = (WorkflowActionBean) workflow.getActions().get(0);
+        action.setConf("<sub-workflow xmlns='uri:oozie:workflow:0.1' name='subwf'>" +
+                "      <app-path>" + subWorkflowAppPath + File.separator + "workflow.xml" + "</app-path>" +
+                "</sub-workflow>");
+        SubWorkflowActionExecutor subWorkflow = new SubWorkflowActionExecutor();
+        subWorkflow.start(new Context(workflow, action), action);
+
+        final OozieClient oozieClient = subWorkflow.getWorkflowClient(new Context(workflow, action),
+                SubWorkflowActionExecutor.LOCAL);
+        waitFor(JOB_TIMEOUT, new Predicate() {
+            public boolean evaluate() throws Exception {
+                return oozieClient.getJobInfo(action.getExternalId()).getStatus() == WorkflowJob.Status.SUCCEEDED;
+            }
+        });
+
+        assertEquals(WorkflowJob.Status.SUCCEEDED, oozieClient.getJobInfo(action.getExternalId()).getStatus());
+        subWorkflow.check(new Context(workflow, action), action);
+        assertEquals(WorkflowAction.Status.DONE, action.getStatus());
+        subWorkflow.end(new Context(workflow, action), action);
+        assertEquals(WorkflowAction.Status.OK, action.getStatus());
+
+        WorkflowAppService wps = Services.get().get(WorkflowAppService.class);
+        WorkflowJob wf = oozieClient.getJobInfo(action.getExternalId());
+        Configuration childConf = new XConfiguration(new StringReader(wf.getConf()));
+        childConf = wps.createProtoActionConf(childConf, "authToken", true);
+        assertEquals(childConf.get(WorkflowAppService.APP_LIB_PATH_LIST), subwfLibJar.toString());
     }
 }

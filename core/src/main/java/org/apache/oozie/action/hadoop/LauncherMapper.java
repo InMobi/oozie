@@ -30,8 +30,12 @@ import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.security.Permission;
 import java.text.MessageFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Properties;
 import java.util.StringTokenizer;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -54,6 +58,7 @@ import org.apache.oozie.util.XLog;
 public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, Runnable {
 
     public static final String CONF_OOZIE_ACTION_MAIN_CLASS = "oozie.launcher.action.main.class";
+    public static final String CONF_OOZIE_ACTION_SUPPORTED_FILESYSTEMS = "oozie.launcher.action.supported.filesystems";
 
     public static final String CONF_OOZIE_ACTION_MAX_OUTPUT_DATA = "oozie.action.max.output.data";
 
@@ -87,9 +92,9 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
 
     private void setRecoveryId(Configuration launcherConf, Path actionDir, String recoveryId) throws LauncherException {
         try {
-            FileSystem fs = FileSystem.get(launcherConf);
             String jobId = launcherConf.get("mapred.job.id");
             Path path = new Path(actionDir, recoveryId);
+            FileSystem fs = FileSystem.get(path.toUri(), launcherConf);
             if (!fs.exists(path)) {
                 try {
                     Writer writer = new OutputStreamWriter(fs.create(path));
@@ -130,7 +135,6 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
             throws HadoopAccessorException, IOException {
         String jobId = null;
         Path recoveryFile = new Path(actionDir, recoveryId);
-        //FileSystem fs = FileSystem.get(launcherConf);
         FileSystem fs = Services.get().get(HadoopAccessorService.class)
                 .createFileSystem(launcherConf.get("user.name"),recoveryFile.toUri(), launcherConf);
 
@@ -146,6 +150,10 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
 
     public static void setupMainClass(Configuration launcherConf, String javaMainClass) {
         launcherConf.set(CONF_OOZIE_ACTION_MAIN_CLASS, javaMainClass);
+    }
+
+    public static void setupSupportedFileSystems(Configuration launcherConf, String supportedFileSystems) {
+        launcherConf.set(CONF_OOZIE_ACTION_SUPPORTED_FILESYSTEMS, supportedFileSystems);
     }
 
     public static void setupMainArguments(Configuration launcherConf, String[] args) {
@@ -195,6 +203,18 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
 
         actionConf.set(OOZIE_JOB_ID, jobId);
         actionConf.set(OOZIE_ACTION_ID, actionId);
+
+        if (Services.get().getConf().getBoolean("oozie.hadoop-2.0.2-alpha.workaround.for.distributed.cache", false)) {
+          List<String> purgedEntries = new ArrayList<String>();
+          Collection<String> entries = actionConf.getStringCollection("mapreduce.job.cache.files");
+          for (String entry : entries) {
+            if (entry.contains("#")) {
+              purgedEntries.add(entry);
+            }
+          }
+          actionConf.setStrings("mapreduce.job.cache.files", purgedEntries.toArray(new String[purgedEntries.size()]));
+          launcherConf.setBoolean("oozie.hadoop-2.0.2-alpha.workaround.for.distributed.cache", true);
+        }
 
         FileSystem fs =
           Services.get().get(HadoopAccessorService.class).createFileSystem(launcherConf.get("user.name"),
@@ -311,8 +331,9 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
             Path p = getIdSwapPath(actionDir);
             // log.debug("Checking for newId file in: [{0}]", p);
 
-            FileSystem fs = Services.get().get(HadoopAccessorService.class).createFileSystem(user, p.toUri(),
-                                                                                             new Configuration());
+            HadoopAccessorService has = Services.get().get(HadoopAccessorService.class);
+            Configuration conf = has.createJobConf(p.toUri().getAuthority());
+            FileSystem fs = has.createFileSystem(user, p.toUri(), conf);
             if (fs.exists(p)) {
                 log.debug("Hadoop Counters is null, but found newID file.");
 
@@ -392,6 +413,9 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
             }
             else {
                 String mainClass = getJobConf().get(CONF_OOZIE_ACTION_MAIN_CLASS);
+                if (getJobConf().getBoolean("oozie.hadoop-2.0.2-alpha.workaround.for.distributed.cache", false)) {
+                  System.err.println("WARNING, workaround for Hadoop 2.0.2-alpha distributed cached issue (MAPREDUCE-4820) enabled");
+                }
                 String msgPrefix = "Main class [" + mainClass + "], ";
                 int errorCode = 0;
                 Throwable errorCause = null;
@@ -495,12 +519,13 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
                         System.out.println();
                         System.out.println("<<< Invocation of Main class completed <<<");
                         System.out.println();
+                        handleExternalChildIDs(reporter);
                     }
                     if (errorMessage == null) {
                         File outputData = new File(System.getProperty("oozie.action.output.properties"));
-                        FileSystem fs = FileSystem.get(getJobConf());
                         if (outputData.exists()) {
-
+                            URI actionDirUri = new Path(actionDir, ACTION_OUTPUT_PROPS).toUri();
+                            FileSystem fs = FileSystem.get(actionDirUri, getJobConf());
                             fs.copyFromLocalFile(new Path(outputData.toString()), new Path(actionDir,
                                                                                            ACTION_OUTPUT_PROPS));
                             reporter.incrCounter(COUNTER_GROUP, COUNTER_OUTPUT_DATA, 1);
@@ -521,8 +546,7 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
                             System.out.println("=======================");
                             System.out.println();
                         }
-                        handleActionStatsData(fs, reporter);
-                        handleExternalChildIDs(fs, reporter);
+                        handleActionStatsData(reporter);
                         File newId = new File(System.getProperty("oozie.action.newId.properties"));
                         if (newId.exists()) {
                             Properties props = new Properties();
@@ -530,7 +554,8 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
                             if (props.getProperty("id") == null) {
                                 throw new IllegalStateException("ID swap file does not have [id] property");
                             }
-                            fs = FileSystem.get(getJobConf());
+                            URI actionDirUri = new Path(actionDir, ACTION_NEW_ID_PROPS).toUri();
+                            FileSystem fs = FileSystem.get(actionDirUri, getJobConf());
                             fs.copyFromLocalFile(new Path(newId.toString()), new Path(actionDir, ACTION_NEW_ID_PROPS));
                             reporter.incrCounter(COUNTER_GROUP, COUNTER_DO_ID_SWAP, 1);
 
@@ -585,7 +610,7 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
         return jobConf;
     }
 
-    private void handleActionStatsData(FileSystem fs, Reporter reporter) throws IOException, LauncherException{
+    private void handleActionStatsData(Reporter reporter) throws IOException, LauncherException {
         File actionStatsData = new File(System.getProperty(EXTERNAL_ACTION_STATS));
         // If stats are stored by the action, then stats file should exist
         if (actionStatsData.exists()) {
@@ -599,25 +624,31 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
                 failLauncher(0, msg, null);
             }
             // copy the stats file to hdfs path which can be accessed by Oozie server
+            URI actionDirUri = new Path(actionDir, ACTION_STATS_PROPS).toUri();
+            FileSystem fs = FileSystem.get(actionDirUri, getJobConf());
             fs.copyFromLocalFile(new Path(actionStatsData.toString()), new Path(actionDir,
                     ACTION_STATS_PROPS));
         }
     }
 
-    private void handleExternalChildIDs(FileSystem fs, Reporter reporter) throws IOException {
+    private void handleExternalChildIDs(Reporter reporter) throws IOException {
         File externalChildIDs = new File(System.getProperty(EXTERNAL_CHILD_IDS));
         // if external ChildIDs are stored by the action, then the file should exist
         if (externalChildIDs.exists()) {
             // copy the externalChildIDs file to hdfs path which can be accessed by Oozie server
+            URI actionDirUri = new Path(actionDir, ACTION_EXTERNAL_CHILD_IDS_PROPS).toUri();
+            FileSystem fs = FileSystem.get(actionDirUri, getJobConf());
             fs.copyFromLocalFile(new Path(externalChildIDs.toString()), new Path(actionDir,
                     ACTION_EXTERNAL_CHILD_IDS_PROPS));
         }
     }
 
-    private void setupMainConfiguration() throws IOException {
-        FileSystem fs = FileSystem.get(getJobConf());
-        fs.copyToLocalFile(new Path(getJobConf().get(OOZIE_ACTION_DIR_PATH), ACTION_CONF_XML), new Path(new File(
-                ACTION_CONF_XML).getAbsolutePath()));
+    private void setupMainConfiguration() throws IOException, HadoopAccessorException {
+        Path pathNew = new Path(new Path(actionDir, ACTION_CONF_XML),
+                new Path(new File(ACTION_CONF_XML).getAbsolutePath()));
+        FileSystem fs = FileSystem.get(pathNew.toUri(), getJobConf());
+        fs.copyToLocalFile(new Path(actionDir, ACTION_CONF_XML),
+                new Path(new File(ACTION_CONF_XML).getAbsolutePath()));
 
         System.setProperty("oozie.launcher.job.id", getJobConf().get("mapred.job.id"));
         System.setProperty("oozie.job.id", getJobConf().get(OOZIE_JOB_ID));
@@ -634,7 +665,8 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
         String prepareXML = getJobConf().get(ACTION_PREPARE_XML);
         if (prepareXML != null) {
              if (!prepareXML.equals("")) {
-                 PrepareActionsDriver.doOperations(prepareXML);
+                 PrepareActionsDriver.doOperations(
+                     getJobConf().getStringCollection(CONF_OOZIE_ACTION_SUPPORTED_FILESYSTEMS), prepareXML);
              } else {
                  System.out.println("There are no prepare actions to execute.");
              }
@@ -688,7 +720,7 @@ public class LauncherMapper<K1, V1, K2, V2> implements Mapper<K1, V1, K2, V2>, R
                 pw.close();
                 errorProps.setProperty("exception.stacktrace", sw.toString());
             }
-            FileSystem fs = FileSystem.get(getJobConf());
+            FileSystem fs = FileSystem.get((new Path(actionDir, ACTION_ERROR_PROPS)).toUri(), getJobConf());
             OutputStream os = fs.create(new Path(actionDir, ACTION_ERROR_PROPS));
             errorProps.store(os, "");
             os.close();

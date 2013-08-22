@@ -27,9 +27,10 @@ import org.apache.oozie.util.ParamChecker;
 import org.apache.oozie.util.XLog;
 import org.apache.oozie.service.HadoopAccessorException;
 import org.apache.oozie.service.Services;
-import org.apache.oozie.servlet.CallbackServlet;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
@@ -52,19 +53,23 @@ public abstract class ActionExecutor {
      * Error code used by {@link #convertException} when there is not register error information for an exception.
      */
     public static final String ERROR_OTHER = "OTHER";
+    
+    public boolean requiresNNJT = false;
 
     private static class ErrorInfo {
         ActionExecutorException.ErrorType errorType;
         String errorCode;
+        Class<?> errorClass;
 
-        private ErrorInfo(ActionExecutorException.ErrorType errorType, String errorCode) {
+        private ErrorInfo(ActionExecutorException.ErrorType errorType, String errorCode, Class<?> errorClass) {
             this.errorType = errorType;
             this.errorCode = errorCode;
+            this.errorClass = errorClass;
         }
     }
 
     private static boolean initMode = false;
-    private static Map<String, Map<Class, ErrorInfo>> ERROR_INFOS = new HashMap<String, Map<Class, ErrorInfo>>();
+    private static Map<String, Map<String, ErrorInfo>> ERROR_INFOS = new HashMap<String, Map<String, ErrorInfo>>();
 
     /**
      * Context information passed to the ActionExecutor methods.
@@ -262,7 +267,8 @@ public abstract class ActionExecutor {
      * all its possible errors. <p/> Subclasses overriding must invoke super.
      */
     public void initActionType() {
-        ERROR_INFOS.put(getType(), new LinkedHashMap<Class, ErrorInfo>());
+        XLog.getLog(getClass()).trace(" Init Action Type : [{0}]", getType());
+        ERROR_INFOS.put(getType(), new LinkedHashMap<String, ErrorInfo>());
     }
 
     /**
@@ -306,14 +312,19 @@ public abstract class ActionExecutor {
             throw new IllegalStateException("Error, action type info locked");
         }
         try {
-            Class klass = Thread.currentThread().getContextClassLoader().loadClass(exClass);
-            Map<Class, ErrorInfo> executorErrorInfo = ERROR_INFOS.get(getType());
-            executorErrorInfo.put(klass, new ErrorInfo(errorType, errorCode));
+            Class errorClass = Thread.currentThread().getContextClassLoader().loadClass(exClass);
+            Map<String, ErrorInfo> executorErrorInfo = ERROR_INFOS.get(getType());
+            executorErrorInfo.put(exClass, new ErrorInfo(errorType, errorCode, errorClass));
         }
-        catch (ClassNotFoundException ex) {
+        catch (ClassNotFoundException cnfe) {
             XLog.getLog(getClass()).warn(
-                    "Exception [{0}] no in classpath, ActionExecutor [{1}] will handled it as ERROR", exClass,
+                    "Exception [{0}] not in classpath, ActionExecutor [{1}] will handle it as ERROR", exClass,
                     getType());
+        }
+        catch (java.lang.NoClassDefFoundError err) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            err.printStackTrace(new PrintStream(baos));
+            XLog.getLog(getClass()).warn(baos.toString());
         }
     }
 
@@ -374,16 +385,41 @@ public abstract class ActionExecutor {
         if (ex instanceof ActionExecutorException) {
             return (ActionExecutorException) ex;
         }
-        for (Map.Entry<Class, ErrorInfo> errorInfo : ERROR_INFOS.get(getType()).entrySet()) {
-            if (errorInfo.getKey().isInstance(ex)) {
-                return new ActionExecutorException(errorInfo.getValue().errorType, errorInfo.getValue().errorCode,
-                                                   "{0}", ex.getMessage(), ex);
+
+        ActionExecutorException aee = null;
+        // Check the cause of the exception first
+        if (ex.getCause() != null) {
+            aee = convertExceptionHelper(ex.getCause());
+        }
+        // If the cause isn't registered or doesn't exist, check the exception itself
+        if (aee == null) {
+            aee = convertExceptionHelper(ex);
+            // If the cause isn't registered either, then just create a new ActionExecutorException
+            if (aee == null) {
+                String exClass = ex.getClass().getName();
+                String errorCode = exClass.substring(exClass.lastIndexOf(".") + 1);
+                aee = new ActionExecutorException(ActionExecutorException.ErrorType.ERROR, errorCode, "{0}", ex.getMessage(), ex);
             }
         }
-        String errorCode = ex.getClass().getName();
-        errorCode = errorCode.substring(errorCode.lastIndexOf(".") + 1);
-        return new ActionExecutorException(ActionExecutorException.ErrorType.ERROR, errorCode, "{0}", ex.getMessage(),
-                                           ex);
+        return aee;
+    }
+
+    private ActionExecutorException convertExceptionHelper(Throwable ex) {
+        Map<String, ErrorInfo> executorErrorInfo = ERROR_INFOS.get(getType());
+        // Check if we have registered ex
+        ErrorInfo classErrorInfo = executorErrorInfo.get(ex.getClass().getName());
+        if (classErrorInfo != null) {
+            return new ActionExecutorException(classErrorInfo.errorType, classErrorInfo.errorCode, "{0}", ex.getMessage(), ex);
+        }
+        // Else, check if a parent class of ex is registered
+        else {
+            for (ErrorInfo errorInfo : executorErrorInfo.values()) {
+                if (errorInfo.errorClass.isInstance(ex)) {
+                    return new ActionExecutorException(errorInfo.errorType, errorInfo.errorCode, "{0}", ex.getMessage(), ex);
+                }
+            }
+        }
+        return null;
     }
 
     /**

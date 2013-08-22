@@ -18,18 +18,14 @@
 package org.apache.oozie.action.hadoop;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.regex.Pattern;
@@ -39,8 +35,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.cli.CliDriver;
 
 public class HiveMain extends LauncherMain {
-    public static final String USER_HIVE_DEFAULT_FILE = "oozie-user-hive-default.xml";
-
     private static final Pattern[] HIVE_JOB_IDS_PATTERNS = {
       Pattern.compile("Ended Job = (job_\\S*)")
     };
@@ -167,6 +161,7 @@ public class HiveMain extends LauncherMain {
         System.out.println();
         System.out.println("Oozie Hive action configuration");
         System.out.println("=================================================================");
+        System.out.println();
 
         Configuration hiveConf = setUpHiveSite();
 
@@ -180,32 +175,6 @@ public class HiveMain extends LauncherMain {
         if (!new File(scriptPath).exists()) {
             throw new RuntimeException("Hive script file [" + scriptPath + "] does not exist");
         }
-
-        // check if hive-default.xml is in the classpath, if not look for oozie-user-hive-default.xml
-        // in the current directory (it will be there if the Hive action has the 'oozie.hive.defaults'
-        // property) and rename it to hive-default.xml
-        if (Thread.currentThread().getContextClassLoader().getResource("hive-default.xml") == null) {
-            File userProvidedDefault = new File(USER_HIVE_DEFAULT_FILE);
-            if (userProvidedDefault.exists()) {
-                if (!userProvidedDefault.renameTo(new File("hive-default.xml"))) {
-                    throw new RuntimeException(
-                            "Could not rename user provided Hive defaults file to 'hive-default.xml'");
-                }
-                System.out.println("Using 'hive-default.xml' defined in the Hive action");
-            }
-            else {
-                throw new RuntimeException(
-                        "Hive JAR does not bundle a 'hive-default.xml' and Hive action does not define one");
-            }
-        }
-        else {
-            System.out.println("Using 'hive-default.xml' defined in the Hive JAR");
-            File userProvidedDefault = new File(USER_HIVE_DEFAULT_FILE);
-            if (userProvidedDefault.exists()) {
-                System.out.println("WARNING: Ignoring user provided Hive defaults");
-            }
-        }
-        System.out.println();
 
         String logFile = setUpHiveLog4J(hiveConf);
 
@@ -222,15 +191,15 @@ public class HiveMain extends LauncherMain {
         // Prepare the Hive Script
         String script = readStringFromFile(scriptPath);
         System.out.println();
-        System.out.println("Original script [" + scriptPath + "] content: ");
+        System.out.println("Script [" + scriptPath + "] content: ");
         System.out.println("------------------------");
         System.out.println(script);
         System.out.println("------------------------");
         System.out.println();
 
+        // Pass any parameters to Hive via arguments
         String[] params = MapReduceMain.getStrings(hiveConf, HIVE_PARAMS);
         if (params.length > 0) {
-            Map<String, String> varMap = new HashMap<String, String>();
             System.out.println("Parameters:");
             System.out.println("------------------------");
             for (String param : params) {
@@ -242,20 +211,9 @@ public class HiveMain extends LauncherMain {
                 } else if (idx == 0) {
                     throw new RuntimeException("Parameter value not specified: " + param);
                 }
-                String var = param.substring(0, idx);
-                String val = param.substring(idx + 1, param.length());
-                varMap.put(var, val);
+                arguments.add("--hivevar");
+                arguments.add(param);
             }
-            System.out.println("------------------------");
-            System.out.println();
-
-            String resolvedScript = substitute(varMap, script);
-            scriptPath = scriptPath + ".sub";
-            writeStringToFile(scriptPath, resolvedScript);
-
-            System.out.println("Resolved script [" + scriptPath + "] content: ");
-            System.out.println("------------------------");
-            System.out.println(resolvedScript);
             System.out.println("------------------------");
             System.out.println();
         }
@@ -326,27 +284,4 @@ public class HiveMain extends LauncherMain {
             }
         }
      }
-
-    private static void writeStringToFile(String filePath, String str) throws IOException {
-        BufferedWriter out = null;
-        try {
-            out = new BufferedWriter(new FileWriter(filePath));
-            out.write(str);
-        }
-        finally {
-            if (out != null) {
-                out.close();
-            }
-        }
-    }
-
-    static String substitute(Map<String, String> vars, String expr) {
-        for (Map.Entry<String, String> entry : vars.entrySet()) {
-            String var = "${" + entry.getKey() + "}";
-            String value = entry.getValue();
-            expr = expr.replace(var, value);
-        }
-        return expr;
-    }
-
 }

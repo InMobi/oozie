@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -48,6 +48,8 @@ import org.json.simple.JSONObject;
 
         @NamedQuery(name = "GET_BUNDLE_ACTIONS_FOR_BUNDLE", query = "select OBJECT(w) from BundleActionBean w where w.bundleId = :bundleId"),
 
+        @NamedQuery(name = "GET_BUNDLE_ACTION_STATUS_PENDING_FOR_BUNDLE", query = "select w.coordId, w.status, w.pending from BundleActionBean w where w.bundleId = :bundleId"),
+
         @NamedQuery(name = "GET_BUNDLE_ACTIONS", query = "select OBJECT(w) from BundleActionBean w"),
 
         @NamedQuery(name = "GET_BUNDLE_ACTIONS_BY_LAST_MODIFIED_TIME", query = "select OBJECT(w) from BundleActionBean w where w.lastModifiedTimestamp >= :lastModifiedTime"),
@@ -64,7 +66,7 @@ import org.json.simple.JSONObject;
 
         @NamedQuery(name = "GET_BUNDLE_ACTIONS_NOT_EQUAL_STATUS_COUNT", query = "select count(w) from BundleActionBean w where w.bundleId = :bundleId AND w.status <> :status"),
 
-        @NamedQuery(name = "GET_BUNDLE_ACTIONS_NOT_TERMINATE_STATUS_COUNT", query = "select count(w) from BundleActionBean w where w.bundleId = :bundleId AND (w.status = 'PERP' OR w.status = 'RUNNING' OR w.status = 'SUSPENDED' OR w.status = 'PREPSUSPENDED' OR w.status = 'PAUSED' OR w.status = 'PREPPAUSED')"),
+        @NamedQuery(name = "GET_BUNDLE_ACTIONS_NOT_TERMINATE_STATUS_COUNT", query = "select count(w) from BundleActionBean w where w.bundleId = :bundleId AND (w.status = 'PREP' OR w.status = 'RUNNING' OR w.status = 'RUNNINGWITHERROR' OR w.status = 'SUSPENDED' OR w.status = 'SUSPENDEDWITHERROR' OR w.status = 'PREPSUSPENDED' OR w.status = 'PAUSED' OR  w.status = 'PAUSEDWITHERROR' OR w.status = 'PREPPAUSED')"),
 
         @NamedQuery(name = "GET_BUNDLE_ACTIONS_FAILED_NULL_COORD_COUNT", query = "select count(w) from BundleActionBean w where w.bundleId = :bundleId AND w.status = 'FAILED' AND w.coordId IS NULL"),
 
@@ -277,6 +279,25 @@ public class BundleActionBean implements Writable, JsonBean {
     }
 
     /**
+     * @return true if in terminal status
+     */
+    public boolean isTerminalStatus() {
+        boolean isTerminal = false;
+        switch (getStatus()) {
+            case SUCCEEDED:
+            case FAILED:
+            case KILLED:
+            case DONEWITHERROR:
+                isTerminal = true;
+                break;
+            default:
+                isTerminal = false;
+                break;
+        }
+        return isTerminal;
+    }
+
+    /**
      * Set Last modified time.
      *
      * @param lastModifiedTimestamp the lastModifiedTimestamp to set
@@ -347,6 +368,11 @@ public class BundleActionBean implements Writable, JsonBean {
 
     @Override
     public JSONObject toJSONObject() {
+        return null;
+    }
+
+    @Override
+    public JSONObject toJSONObject(String timeZoneId) {
         return null;
     }
 }

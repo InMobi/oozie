@@ -27,6 +27,8 @@ import java.io.Writer;
 import java.util.Properties;
 
 import org.apache.hadoop.fs.Path;
+import org.apache.oozie.action.control.StartActionExecutor;
+import org.apache.oozie.action.hadoop.FsActionExecutor;
 import org.apache.oozie.client.WorkflowAction;
 import org.apache.oozie.client.WorkflowJob;
 import org.apache.oozie.client.OozieClient;
@@ -75,19 +77,17 @@ public class TestActionFailover extends XFsTestCase {
         final Path target = new Path(getFsTestCaseDir().toString(), "fsfailover-target");
         conf.setProperty("source", source.toString());
         conf.setProperty("target", target.toUri().getPath());
-
         final String jobId1 = wfClient.submit(conf);
         wfClient.start(jobId1);
-        
         setSystemProperty(FaultInjection.FAULT_INJECTION, "true");
         setSystemProperty(SkipCommitFaultInjection.ACTION_FAILOVER_FAULT_INJECTION, "true");
-
+        
         waitFor(10 * 1000, new Predicate() {
             public boolean evaluate() throws Exception {
                 return getFileSystem().exists(target);
             }
         });
-        assertTrue(getFileSystem().exists(target));
+        assertFalse(getFileSystem().exists(target));
 
         waitFor(10 * 1000, new Predicate() {
             public boolean evaluate() throws Exception {
@@ -101,14 +101,16 @@ public class TestActionFailover extends XFsTestCase {
         WorkflowStore store = Services.get().get(WorkflowStoreService.class).create();
 
         List<WorkflowActionBean> actions = store.getActionsForWorkflow(jobId1, false);
+        assertEquals(1, actions.size());
         WorkflowActionBean action = actions.get(0);
         assertEquals(WorkflowAction.Status.PREP, action.getStatus());
-
-        ActionStartXCommand actionStartCommand = new ActionStartXCommand(action.getId(), action.getType());
-        actionStartCommand.call();
+        assertEquals(StartActionExecutor.TYPE, action.getType());
 
         setSystemProperty(FaultInjection.FAULT_INJECTION, "false");
         setSystemProperty(SkipCommitFaultInjection.ACTION_FAILOVER_FAULT_INJECTION, "false");
+
+        ActionStartXCommand actionStartCommand = new ActionStartXCommand(action.getId(), action.getType());
+        actionStartCommand.call();
 
         store = Services.get().get(WorkflowStoreService.class).create();
         actions = store.getActionsForWorkflow(jobId1, false);

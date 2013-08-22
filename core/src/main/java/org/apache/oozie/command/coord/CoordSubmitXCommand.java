@@ -24,8 +24,6 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -34,7 +32,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
 import java.util.TreeSet;
 
 import javax.xml.transform.stream.StreamSource;
@@ -66,16 +63,18 @@ import org.apache.oozie.service.SchemaService;
 import org.apache.oozie.service.Service;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.service.UUIDService;
-import org.apache.oozie.service.WorkflowAppService;
 import org.apache.oozie.service.SchemaService.SchemaName;
 import org.apache.oozie.service.UUIDService.ApplicationType;
 import org.apache.oozie.util.ConfigUtils;
 import org.apache.oozie.util.DateUtils;
 import org.apache.oozie.util.ELEvaluator;
+import org.apache.oozie.util.ELUtils;
 import org.apache.oozie.util.IOUtils;
 import org.apache.oozie.util.InstrumentUtils;
 import org.apache.oozie.util.LogUtils;
 import org.apache.oozie.util.ParamChecker;
+import org.apache.oozie.util.ParameterVerifier;
+import org.apache.oozie.util.ParameterVerifierException;
 import org.apache.oozie.util.PropertiesUtils;
 import org.apache.oozie.util.XConfiguration;
 import org.apache.oozie.util.XLog;
@@ -214,12 +213,18 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
             coordJob.setOrigJobXml(appXml);
             LOG.debug("jobXml after initial validation " + XmlUtils.prettyPrint(appXml).toString());
 
-            String appNamespace = readAppNamespace(appXml);
+            Element eXml = XmlUtils.parseXml(appXml);
+            
+            String appNamespace = readAppNamespace(eXml);
             coordJob.setAppNamespace(appNamespace);
 
+            ParameterVerifier.verifyParameters(conf, eXml);
+            
             appXml = XmlUtils.removeComments(appXml);
             initEvaluators();
             Element eJob = basicResolveAndIncludeDS(appXml, conf, coordJob);
+
+            validateCoordinatorJob();
 
             // checking if the coordinator application data input/output events
             // specify multiple data instance values in erroneous manner
@@ -266,20 +271,30 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
                 return output;
             }
         }
+        catch (JDOMException jex) {
+            exceptionOccured = true;
+            LOG.warn("ERROR: ", jex);
+            throw new CommandException(ErrorCode.E0700, jex.getMessage(), jex);
+        }
         catch (CoordinatorJobException cex) {
             exceptionOccured = true;
             LOG.warn("ERROR:  ", cex);
             throw new CommandException(cex);
         }
+        catch (ParameterVerifierException pex) {
+            exceptionOccured = true;
+            LOG.warn("ERROR: ", pex);
+            throw new CommandException(pex);
+        }
         catch (IllegalArgumentException iex) {
             exceptionOccured = true;
             LOG.warn("ERROR:  ", iex);
-            throw new CommandException(ErrorCode.E1003, iex);
+            throw new CommandException(ErrorCode.E1003, iex.getMessage(), iex);
         }
         catch (Exception ex) {
             exceptionOccured = true;
             LOG.warn("ERROR:  ", ex);
-            throw new CommandException(ErrorCode.E0803, ex);
+            throw new CommandException(ErrorCode.E0803, ex.getMessage(), ex);
         }
         finally {
             if (exceptionOccured) {
@@ -294,10 +309,20 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
         return jobId;
     }
 
-    /*
-     * Check against multiple data instance values inside a single <instance> tag
-     * If found, the job is not submitted and user is informed to correct the error, instead of defaulting to the first instance value in the list
+    /**
+     * Method that validates values in the definition for correctness. Placeholder to add more.
      */
+    private void validateCoordinatorJob() {
+        // check if startTime < endTime
+        if (coordJob.getStartTime().after(coordJob.getEndTime())) {
+            throw new IllegalArgumentException("Coordinator Start Time cannot be greater than End Time.");
+        }
+    }
+
+  /*
+  * Check against multiple data instance values inside a single <instance> <start-instance> or <end-instance> tag
+  * If found, the job is not submitted and user is informed to correct the error, instead of defaulting to the first instance value in the list
+  */
     private void checkMultipleTimeInstances(Element eCoordJob, String eventType, String dataType) throws CoordinatorJobException {
         Element eventsSpec, dataSpec, instance;
         List<Element> instanceSpecList;
@@ -326,6 +351,47 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
                         handleExpresionWithMultipleInstances(eventType, dataType, instanceValue);
                     }
                 }
+
+                // In case of input-events, there can be multiple child <start-instance> datasets. Iterating to ensure none of them have errors
+                instanceSpecList = dataSpec.getChildren("start-instance", ns);
+                instanceIter = instanceSpecList.iterator();
+                while(instanceIter.hasNext()) {
+                    instance = ((Element) instanceIter.next());
+                    if(instance.getContentSize() == 0) { //empty string or whitespace
+                        throw new CoordinatorJobException(ErrorCode.E1021, "<start-instance> tag within " + eventType + " is empty!");
+                    }
+                    instanceValue = instance.getContent(0).toString();
+                    boolean isInvalid = false;
+                    try {
+                        isInvalid = evalAction.checkForExistence(instanceValue, ",");
+                    } catch (Exception e) {
+                        handleELParseException(eventType, dataType, instanceValue);
+                    }
+                    if (isInvalid) { // reaching this block implies start instance is not empty i.e. length > 0
+                        handleExpresionWithStartMultipleInstances(eventType, dataType, instanceValue);
+                    }
+                }
+
+                // In case of input-events, there can be multiple child <end-instance> datasets. Iterating to ensure none of them have errors
+                instanceSpecList = dataSpec.getChildren("end-instance", ns);
+                instanceIter = instanceSpecList.iterator();
+                while(instanceIter.hasNext()) {
+                    instance = ((Element) instanceIter.next());
+                    if(instance.getContentSize() == 0) { //empty string or whitespace
+                        throw new CoordinatorJobException(ErrorCode.E1021, "<end-instance> tag within " + eventType + " is empty!");
+                    }
+                    instanceValue = instance.getContent(0).toString();
+                    boolean isInvalid = false;
+                    try {
+                        isInvalid = evalAction.checkForExistence(instanceValue, ",");
+                    } catch (Exception e) {
+                        handleELParseException(eventType, dataType, instanceValue);
+                    }
+                    if (isInvalid) { // reaching this block implies instance is not empty i.e. length > 0
+                        handleExpresionWithMultipleEndInstances(eventType, dataType, instanceValue);
+                    }
+                }
+
             }
         }
     }
@@ -352,6 +418,20 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
         }
         throw new CoordinatorJobException(ErrorCode.E1021, eventType + " instance '" + instanceValue
                 + "' contains more than one date instance. Coordinator job NOT SUBMITTED. " + correctAction);
+    }
+
+    private void handleExpresionWithStartMultipleInstances(String eventType, String dataType, String instanceValue)
+            throws CoordinatorJobException {
+        String correctAction = "Coordinator app definition should not have multiple start-instances";
+        throw new CoordinatorJobException(ErrorCode.E1021, eventType + " start-instance '" + instanceValue
+                + "' contains more than one date start-instance. Coordinator job NOT SUBMITTED. " + correctAction);
+    }
+
+    private void handleExpresionWithMultipleEndInstances(String eventType, String dataType, String instanceValue)
+            throws CoordinatorJobException {
+        String correctAction = "Coordinator app definition should not have multiple end-instances";
+        throw new CoordinatorJobException(ErrorCode.E1021, eventType + " end-instance '" + instanceValue
+                + "' contains more than one date end-instance. Coordinator job NOT SUBMITTED. " + correctAction);
     }
 
     /**
@@ -393,28 +473,21 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
     /**
      * Read the application XML schema namespace
      *
-     * @param xmlContent input coordinator xml
+     * @param coordXmlElement input coordinator xml Element
      * @return app xml namespace
      * @throws CoordinatorJobException
      */
-    private String readAppNamespace(String xmlContent) throws CoordinatorJobException {
-        try {
-            Element coordXmlElement = XmlUtils.parseXml(xmlContent);
-            Namespace ns = coordXmlElement.getNamespace();
-            if (ns != null && bundleId != null && ns.getURI().equals(SchemaService.COORDINATOR_NAMESPACE_URI_1)) {
-                throw new CoordinatorJobException(ErrorCode.E1319, "bundle app can not submit coordinator namespace "
-                        + SchemaService.COORDINATOR_NAMESPACE_URI_1 + ", please use 0.2 or later");
-            }
-            if (ns != null) {
-                return ns.getURI();
-            }
-            else {
-                throw new CoordinatorJobException(ErrorCode.E0700, "the application xml namespace is not given");
-            }
+    private String readAppNamespace(Element coordXmlElement) throws CoordinatorJobException {
+        Namespace ns = coordXmlElement.getNamespace();
+        if (ns != null && bundleId != null && ns.getURI().equals(SchemaService.COORDINATOR_NAMESPACE_URI_1)) {
+            throw new CoordinatorJobException(ErrorCode.E1319, "bundle app can not submit coordinator namespace "
+                    + SchemaService.COORDINATOR_NAMESPACE_URI_1 + ", please use 0.2 or later");
         }
-        catch (JDOMException ex) {
-            LOG.warn("JDOMException :", ex);
-            throw new CoordinatorJobException(ErrorCode.E0700, ex.getMessage(), ex);
+        if (ns != null) {
+            return ns.getURI();
+        }
+        else {
+            throw new CoordinatorJobException(ErrorCode.E0700, "the application xml namespace is not given");
         }
     }
 
@@ -574,8 +647,8 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
 
         // Application name
         if (this.coordName == null) {
-            val = resolveAttribute("name", eAppXml, evalNofuncs);
-            coordJob.setAppName(val);
+            String name = ELUtils.resolveAppName(eAppXml.getAttribute("name").getValue(), conf);
+            coordJob.setAppName(name);
         }
         else {
             // this coord job is created from bundle
@@ -584,19 +657,19 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
 
         // start time
         val = resolveAttribute("start", eAppXml, evalNofuncs);
-        ParamChecker.checkUTC(val, "start");
-        coordJob.setStartTime(DateUtils.parseDateUTC(val));
+        ParamChecker.checkDateOozieTZ(val, "start");
+        coordJob.setStartTime(DateUtils.parseDateOozieTZ(val));
         // end time
         val = resolveAttribute("end", eAppXml, evalNofuncs);
-        ParamChecker.checkUTC(val, "end");
-        coordJob.setEndTime(DateUtils.parseDateUTC(val));
+        ParamChecker.checkDateOozieTZ(val, "end");
+        coordJob.setEndTime(DateUtils.parseDateOozieTZ(val));
         // Time zone
         val = resolveAttribute("timezone", eAppXml, evalNofuncs);
         ParamChecker.checkTimeZone(val, "timezone");
         coordJob.setTimeZone(val);
 
         // controls
-        val = resolveTagContents("timeout", eAppXml.getChild("controls", eAppXml.getNamespace()), evalNofuncs);
+        val = resolveTagContents("timeout", eAppXml.getChild("controls", eAppXml.getNamespace()), evalFreq);
         if (val == "") {
             val = Services.get().getConf().get(CONF_DEFAULT_TIMEOUT_NORMAL);
         }
@@ -790,7 +863,7 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
             addAnAttribute("end_of_duration", dsElem, evalFreq.getVariable("endOfDuration") == null ? TimeUnit.NONE
                     .toString() : ((TimeUnit) evalFreq.getVariable("endOfDuration")).toString());
             val = resolveAttribute("initial-instance", dsElem, evalNofuncs);
-            ParamChecker.checkUTC(val, "initial-instance");
+            ParamChecker.checkDateOozieTZ(val, "initial-instance");
             checkInitialInstance(val);
             val = resolveAttribute("timezone", dsElem, evalNofuncs);
             ParamChecker.checkTimeZone(val, "timezone");
@@ -875,7 +948,7 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
             for (Element e : (List<Element>) datasets.getChildren("dataset", datasets.getNamespace())) {
                 String dsName = e.getAttributeValue("name");
                 if (dsList.contains(dsName)) {// Override with this DS
-                    // Remove old DS
+                    // Remove duplicate
                     removeDataSet(allDataSets, dsName);
                 }
                 else {
@@ -944,6 +1017,7 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
         for (Element eDataset : (List<Element>) eDatasets.getChildren("dataset", eDatasets.getNamespace())) {
             if (eDataset.getAttributeValue("name").equals(name)) {
                 eDataset.detach();
+                return;
             }
         }
         throw new RuntimeException("undefined dataset: " + name);
@@ -1042,17 +1116,17 @@ public class CoordSubmitXCommand extends SubmitTransitionXCommand {
      */
     private void checkInitialInstance(String val) throws CoordinatorJobException, IllegalArgumentException {
         Date initialInstance, givenInstance;
-        DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
-        df.setTimeZone(TimeZone.getTimeZone("UTC"));
         try {
             initialInstance = DateUtils.parseDateUTC("1970-01-01T00:00Z");
-            givenInstance = DateUtils.parseDateUTC(val);
+            givenInstance = DateUtils.parseDateOozieTZ(val);
         }
         catch (Exception e) {
-            throw new IllegalArgumentException("Unable to parse dataset initial-instance string '" + val + "' to Date object. ",e);
+            throw new IllegalArgumentException("Unable to parse dataset initial-instance string '" + val +
+                                               "' to Date object. ",e);
         }
         if(givenInstance.compareTo(initialInstance) < 0) {
-            throw new CoordinatorJobException(ErrorCode.E1021, "Dataset initial-instance " + df.format(givenInstance) + " is earlier than the default initial instance " + df.format(initialInstance));
+            throw new CoordinatorJobException(ErrorCode.E1021, "Dataset initial-instance " + val +
+                    " is earlier than the default initial instance " + DateUtils.formatDateOozieTZ(initialInstance));
         }
     }
 

@@ -12,6 +12,11 @@ The goal of this document is to define a coordinator engine system specialized i
 
 ---++ Changelog
 
+---+++!! 26/JUL/2012
+
+   * #Appendix A, updated XML schema 0.4 to include =parameters= element
+   * #6.5 Updated to mention about =parameters= element as of schema 0.4
+
 ---+++!! 23/NOV/2011:
 
    * Update execution order typo 
@@ -92,7 +97,7 @@ This document defines the functional specification for the Oozie Coordinator sys
 
 *Dataset:* Collection of data referred to by a logical name. A dataset normally has several instances of data and each one of them can be referred individually. Each dataset instance is represented by a unique set of URIs.
 
-*Synchronous Dataset:* Synchronous datasets instances are generated at fixed time intervals and there is a dataset instance associated with each time interval. Synchronous dataset instances are identified by their nominal time. For example, in the case of a file system based dataset, the nominal time would be somewhere in the file path of the dataset instance: =hdfs://foo:9000/usr/logs/2009/04/15/23/30= .
+*Synchronous Dataset:* Synchronous datasets instances are generated at fixed time intervals and there is a dataset instance associated with each time interval. Synchronous dataset instances are identified by their nominal time. For example, in the case of a file system based dataset, the nominal time would be somewhere in the file path of the dataset instance: =hdfs://foo:8020/usr/logs/2009/04/15/23/30= .
 
 *Coordinator Action:* A coordinator action is a workflow job that is started when a set of conditions are met (input dataset instances are available).
 
@@ -120,11 +125,34 @@ Refer to section #6.5 'Parameterization of Coordinator Applications' for more de
 
 ---++ 4. Datetime, Frequency and Time-Period Representation
 
+Oozie processes coordinator jobs in a fixed timezone with no DST (typically =UTC=), this timezone is referred as 'Oozie
+processing timezone'.
+
+The Oozie processing timezone is used to resolve coordinator jobs start/end times, job pause times and the initial-instance
+of datasets. Also, all coordinator dataset instance URI templates are resolved to a datetime in the Oozie processing
+time-zone.
+
+All the datetimes used in coordinator applications and job parameters to coordinator applications must be specified
+in the Oozie processing timezone. If Oozie processing timezone is =UTC=, the qualifier is  *Z*. If Oozie processing
+time zone is other than =UTC=, the qualifier must be the GMT offset, =(+/-)####=.
+
+For example, a datetime in =UTC=  is =2012-08-12T00:00Z=, the same datetime in =GMT+5:30= is =2012-08-12T05:30+0530=.
+
+For simplicity, there rest of this specification uses =UTC= datetimes.
+
+#datetime
 ---+++ 4.1. Datetime
 
-All datetime values are always in [[http://en.wikipedia.org/wiki/Coordinated_Universal_Time][UTC]] and [[http://www.w3.org/TR/NOTE-datetime][W3C Date-Time format]] down to a minute precision, 'YYYY-MM-DDTHH:mmZ'.
+If the Oozie processing timezone is =UTC=, all datetime values are always in
+[[http://en.wikipedia.org/wiki/Coordinated_Universal_Time][UTC]] down to a minute precision, 'YYYY-MM-DDTHH:mmZ'.
 
 For example =2009-08-10T13:10Z= is August 10th 2009 at 13:10 UTC.
+
+If the Oozie processing timezone is a GMT offset =GMT(+/-)####=, all datetime values are always in
+[[http://en.wikipedia.org/wiki/ISO_8601][ISO 8601]] in the corresponding GMT offset down to a minute precision,
+'YYYY-MM-DDTHH:mmGMT(+/-)####'.
+
+For example =2009-08-10T13:10+0530= is August 10th 2009 at 13:10 GMT+0530, India timezone.
 
 ---++++ 4.1.1 End of the day in Datetime Values
 
@@ -145,7 +173,7 @@ Oozie Coordinator must provide a tool for developers to list all supported timez
 
 ---+++ 4.3. Timezones and Daylight-Saving
 
-While Oozie coordinator engine works in UTC, it provides DST support for coordinator applications.
+While Oozie coordinator engine works in a fixed timezone with no DST (typically =UTC=), it provides DST support for coordinator applications.
 
 The baseline datetime for datasets and coordinator applications are expressed in UTC. The baseline datetime is the time of the first occurrence.
 
@@ -404,7 +432,7 @@ The following EL constants can be used within synchronous dataset URI templates:
 | =MONTH= | _DD_ | 2 digits representing the month of the year, January = 1 |
 | =DAY= | _DD_ | 2 digits representing the day of the month |
 | =HOUR= | _HH_ | 2 digits representing the hour of the day, in 24 hour format, 0 - 23 |
-| =MIN= | _mm_ | 2 digits reprensenting the minute of the hour, 0 - 59 |
+| =MINUTE= | _mm_ | 2 digits reprensenting the minute of the hour, 0 - 59 |
 
 *%PURPLE% Syntax: %ENDCOLOR%*
 
@@ -426,7 +454,7 @@ IMPORTANT: The values of the EL constants in the dataset URIs (in HDFS) are expe
   <dataset name="logs" frequency="${coord:days(1)}"
            initial-instance="2009-02-15T08:15Z" timezone="America/Los_Angeles">
     <uri-template>
-      hdfs://foo:9000/app/logs/${market}/${YEAR}${MONTH}/${DAY}/data
+      hdfs://foo:8020/app/logs/${market}/${YEAR}${MONTH}/${DAY}/data
     </uri-template>
     <done-flag></done-flag>
   </dataset>
@@ -438,9 +466,9 @@ The dataset would resolve to the following URIs and Coordinator looks for the ex
 <verbatim>
   [market] will be replaced with user given property.
   
-  hdfs://foo:9000/usr/app/[market]/2009/02/15/data
-  hdfs://foo:9000/usr/app/[market]/2009/02/16/data
-  hdfs://foo:9000/usr/app/[market]/2009/02/17/data
+  hdfs://foo:8020/usr/app/[market]/2009/02/15/data
+  hdfs://foo:8020/usr/app/[market]/2009/02/16/data
+  hdfs://foo:8020/usr/app/[market]/2009/02/17/data
   ...
 </verbatim>
 
@@ -450,25 +478,25 @@ The dataset would resolve to the following URIs and Coordinator looks for the ex
 <verbatim>
   <dataset name="stats" frequency="${coord:months(1)}"
            initial-instance="2009-01-10T10:00Z" timezone="America/Los_Angeles">
-    <uri-template>hdfs://foo:9000/usr/app/stats/${YEAR}/${MONTH}/data</uri-template>
+    <uri-template>hdfs://foo:8020/usr/app/stats/${YEAR}/${MONTH}/data</uri-template>
   </dataset>
 </verbatim>
 
 The dataset would resolve to the following URIs:
 
 <verbatim>
-  hdfs://foo:9000/usr/app/stats/2009/01/data
-  hdfs://foo:9000/usr/app/stats/2009/02/data
-  hdfs://foo:9000/usr/app/stats/2009/03/data
+  hdfs://foo:8020/usr/app/stats/2009/01/data
+  hdfs://foo:8020/usr/app/stats/2009/02/data
+  hdfs://foo:8020/usr/app/stats/2009/03/data
   ...
 </verbatim>
 
 The dataset are ready until '_SUCCESS' exists in each path:
 
 <verbatim>
-  hdfs://foo:9000/usr/app/stats/2009/01/data/_SUCCESS
-  hdfs://foo:9000/usr/app/stats/2009/02/data/_SUCCESS
-  hdfs://foo:9000/usr/app/stats/2009/03/data/_SUCCESS
+  hdfs://foo:8020/usr/app/stats/2009/01/data/_SUCCESS
+  hdfs://foo:8020/usr/app/stats/2009/02/data/_SUCCESS
+  hdfs://foo:8020/usr/app/stats/2009/03/data/_SUCCESS
   ...
 </verbatim>
 
@@ -479,7 +507,7 @@ The dataset are ready until '_SUCCESS' exists in each path:
   <dataset name="stats" frequency="${coord:months(3)}"
            initial-instance="2009-01-31T20:00Z" timezone="America/Los_Angeles">
     <uri-template>
-      hdfs://foo:9000/usr/app/stats/${YEAR}/${MONTH}/data
+      hdfs://foo:8020/usr/app/stats/${YEAR}/${MONTH}/data
     </uri-template>
     <done-flag>trigger.dat</done-flag>
   </dataset>
@@ -488,18 +516,18 @@ The dataset are ready until '_SUCCESS' exists in each path:
 The dataset would resolve to the following URIs:
 
 <verbatim>
-  hdfs://foo:9000/usr/app/stats/2009/01/data
-  hdfs://foo:9000/usr/app/stats/2009/04/data
-  hdfs://foo:9000/usr/app/stats/2009/07/data
+  hdfs://foo:8020/usr/app/stats/2009/01/data
+  hdfs://foo:8020/usr/app/stats/2009/04/data
+  hdfs://foo:8020/usr/app/stats/2009/07/data
   ...
 </verbatim>
 
 The dataset are ready until 'trigger.dat' exists in each path:
 
 <verbatim>
-  hdfs://foo:9000/usr/app/stats/2009/01/data/trigger.dat
-  hdfs://foo:9000/usr/app/stats/2009/04/data/trigger.dat
-  hdfs://foo:9000/usr/app/stats/2009/07/data/trigger.dat
+  hdfs://foo:8020/usr/app/stats/2009/01/data/trigger.dat
+  hdfs://foo:8020/usr/app/stats/2009/04/data/trigger.dat
+  hdfs://foo:8020/usr/app/stats/2009/07/data/trigger.dat
   ...
 </verbatim>
 
@@ -510,7 +538,7 @@ The dataset are ready until 'trigger.dat' exists in each path:
   <dataset name="logs" frequency="${coord:days(1)}"
            initial-instance="2009-01-01T10:30Z" timezone="America/Los_Angeles">
     <uri-template>
-      hdfs://foo:9000/usr/app/logs/${YEAR}/${MONTH}/${DAY}/data
+      hdfs://foo:8020/usr/app/logs/${YEAR}/${MONTH}/${DAY}/data
     </uri-template>
   </dataset>
 </verbatim>
@@ -518,9 +546,9 @@ The dataset are ready until 'trigger.dat' exists in each path:
 The dataset would resolve to the following URIs:
 
 <verbatim>
-  hdfs://foo:9000/usr/app/logs/2009/01/01/data
-  hdfs://foo:9000/usr/app/logs/2009/01/02/data
-  hdfs://foo:9000/usr/app/logs/2009/01/03/data
+  hdfs://foo:8020/usr/app/logs/2009/01/01/data
+  hdfs://foo:8020/usr/app/logs/2009/01/02/data
+  hdfs://foo:8020/usr/app/logs/2009/01/03/data
   ...
 </verbatim>
 
@@ -530,7 +558,7 @@ The dataset would resolve to the following URIs:
   <dataset name="logs" frequency="${coord:days(1)}"
            initial-instance="2009-01-01T10:30Z" timezone="America/Los_Angeles">
     <uri-template>
-      hdfs://foo:9000/usr/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}/${MINUTE}/data
+      hdfs://foo:8020/usr/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}/${MINUTE}/data
     </uri-template>
   </dataset>
 </verbatim>
@@ -538,9 +566,9 @@ The dataset would resolve to the following URIs:
 The dataset resolves to the following URIs with fixed values for the finer precision template variables:
 
 <verbatim>
-  hdfs://foo:9000/usr/app/logs/2009/01/01/10/30/data
-  hdfs://foo:9000/usr/app/logs/2009/01/02/10/30/data
-  hdfs://foo:9000/usr/app/logs/2009/01/03/10/30/data
+  hdfs://foo:8020/usr/app/logs/2009/01/01/10/30/data
+  hdfs://foo:8020/usr/app/logs/2009/01/02/10/30/data
+  hdfs://foo:8020/usr/app/logs/2009/01/03/10/30/data
   ...
 </verbatim>
 
@@ -573,18 +601,18 @@ Dataset definitions are grouped in XML files.
 <verbatim>
 <datasets>
 .
-  <include>hdfs://foo:9000/app/dataset-definitions/globallogs.xml</include>
+  <include>hdfs://foo:8020/app/dataset-definitions/globallogs.xml</include>
 .
   <dataset name="logs" frequency="${coord:hours(12)}"
            initial-instance="2009-02-15T08:15Z" timezone="Americas/Los_Angeles">
     <uri-template>
-    hdfs://foo:9000/app/logs/${market}/${YEAR}${MONTH}/${DAY}/${HOUR}/${MINUTE}/data
+    hdfs://foo:8020/app/logs/${market}/${YEAR}${MONTH}/${DAY}/${HOUR}/${MINUTE}/data
     </uri-template>
   </dataset>
 .
   <dataset name="stats" frequency="${coord:months(1)}"
            initial-instance="2009-01-10T10:00Z" timezone="Americas/Los_Angeles">
-    <uri-template>hdfs://foo:9000/usr/app/stats/${YEAR}/${MONTH}/data</uri-template>
+    <uri-template>hdfs://foo:8020/usr/app/stats/${YEAR}/${MONTH}/data</uri-template>
   </dataset>
 .
 </datasets>
@@ -610,36 +638,39 @@ To create a coordinator job, a job configuration that resolves all coordinator a
 
 A coordinator job is a running instance of a coordinator application running from a start time to an end time.
 
-At any time, a coordinator job is in one of the following status: *PREP, RUNNING, PREPSUSPENDED, SUSPENDED, PREPPAUSED, PAUSED, SUCCEEDED, DONWITHERROR, KILLED, FAILED*.
+At any time, a coordinator job is in one of the following status: *PREP, RUNNING, RUNNINGWITHERROR, PREPSUSPENDED, SUSPENDED, SUSPENDEDWITHERROR, PREPPAUSED, PAUSED, PAUSEDWITHERROR, SUCCEEDED, DONEWITHERROR, KILLED, FAILED*.
 
 Valid coordinator job status transitions are:
 
    * *PREP --> PREPSUSPENDED | PREPPAUSED | RUNNING | KILLED*
-   * *RUNNING --> SUSPENDED | PAUSED | SUCCEEDED | DONWITHERROR | KILLED | FAILED*
+   * *RUNNING --> RUNNINGWITHERROR | SUSPENDED | PAUSED | SUCCEEDED | KILLED*
+   * *RUNNINGWITHERROR --> RUNNING | SUSPENDEDWITHERROR | PAUSEDWITHERROR | DONEWITHERROR | KILLED | FAILED*
    * *PREPSUSPENDED --> PREP | KILLED*
    * *SUSPENDED --> RUNNING | KILLED*
+   * *SUSPENDEDWITHERROR --> RUNNINGWITHERROR | KILLED*
    * *PREPPAUSED --> PREP | KILLED*
    * *PAUSED --> SUSPENDED | RUNNING | KILLED*
+   * *PAUSEDWITHERROR --> SUSPENDEDWITHERROR | RUNNINGWITHERROR | KILLED*
 
 When a coordinator job is submitted, oozie parses the coordinator job XML. Oozie then creates a record for the coordinator with status *PREP* and returns a unique ID. The coordinator is also started immediately if pause time is not set.
 
-When a user requests to suspend a coordinator job that is in *PREP* state, oozie puts the job in status *PREPSUSPEND*. Similarly, when pause time reaches for a coordinator job with *PREP* status, oozie puts the job in status *PREPPAUSED*.
+When a user requests to suspend a coordinator job that is in *PREP* state, oozie puts the job in status *PREPSUSPENDED*. Similarly, when pause time reaches for a coordinator job with *PREP* status, oozie puts the job in status *PREPPAUSED*.
 
-Conversely, when a user requests to resume a *PREPSUSPEND* coordinator job, oozie puts the job in status *PREP*. And when pause time is reset for a coordinator job and job status is *PREPPAUSED*, oozie puts the job in status *PREP*.
+Conversely, when a user requests to resume a *PREPSUSPENDED* coordinator job, oozie puts the job in status *PREP*. And when pause time is reset for a coordinator job and job status is *PREPPAUSED*, oozie puts the job in status *PREP*.
 
-When a coordinator job starts, oozie puts the job in status *RUNNING* and start materializing workflow jobs based on job frequency.
+When a coordinator job starts, oozie puts the job in status *RUNNING* and start materializing workflow jobs based on job frequency. If any workflow job goes to *FAILED/KILLED/TIMEDOUT* state, the coordinator job is put in *RUNNINGWITHERROR*
 
-When a user requests to kill a coordinator job, oozie puts the job in status *KILLED* and it sends kill to all submitted workflow jobs. If any coordinator action finishes with not *KILLED*, oozie puts the coordinator job into *DONEWITHERROR*.
+When a user requests to kill a coordinator job, oozie puts the job in status *KILLED* and it sends kill to all submitted workflow jobs.
 
-When a user requests to suspend a coordinator job that is in *RUNNING* status, oozie puts the job in status *SUSPEND* and it suspends all submitted workflow jobs.
+When a user requests to suspend a coordinator job that is in *RUNNING* status, oozie puts the job in status *SUSPENDED* and it suspends all submitted workflow jobs. Similarly, when a user requests to suspend a coordinator job that is in *RUNNINGWITHERROR* status, oozie puts the job in status *SUSPENDEDWITHERROR* and it suspends all submitted workflow jobs.
 
-When pause time reaches for a coordinator job that is in *RUNNING* status, oozie puts the job in status *PAUSED*.
+When pause time reaches for a coordinator job that is in *RUNNING* status, oozie puts the job in status *PAUSED*. Similarly, when pause time reaches for a coordinator job that is in *RUNNINGWITHERROR* status, oozie puts the job in status *PAUSEDWITHERROR*.
 
-Conversely, when a user requests to resume a *SUSPEND* coordinator job, oozie puts the job in status *RUNNING*. And when pause time is reset for a coordinator job and job status is *PAUSED*, oozie puts the job in status *RUNNING*.
+Conversely, when a user requests to resume a *SUSPENDED* coordinator job, oozie puts the job in status *RUNNING*. Also,  when a user requests to resume a *SUSPENDEDWITHERROR* coordinator job, oozie puts the job in status *RUNNINGWITHERROR*. And when pause time is reset for a coordinator job and job status is *PAUSED*, oozie puts the job in status *RUNNING*. Also, when the pause time is reset for a coordinator job and job status is *PAUSEDWITHERROR*, oozie puts the job in status *RUNNINGWITHERROR*
 
 A coordinator job creates workflow jobs (commonly coordinator actions) only for the duration of the coordinator job and only if the coordinator job is in *RUNNING* status. If the coordinator job has been suspended, when resumed it will create all the coordinator actions that should have been created during the time it was suspended, actions will not be lost, they will delayed.
 
-When the coordinator job materialization finishs and all workflow jobs finish, oozie updates the coordinator status accordingly. For example, if all workflows are *SUCCEEDED*, oozie put the coordinator job into *SUCCEEDED* status. However, if any workflow job finishes with not *SUCCEEDED* (e.g. *KILLED* or *FAILED* or *TIMEOUT*), oozie puts the coordinator job into *DONEWITHERROR*. If all coordinator actions are *TIMEDOUT*, oozie puts the coordinator job into *DONEWITHERROR*.
+When the coordinator job materialization finishs and all workflow jobs finish, oozie updates the coordinator status accordingly. For example, if all workflows are *SUCCEEDED*, oozie puts the coordinator job into *SUCCEEDED* status. If all workflows are *FAILED*, oozie puts the coordinator job into *FAILED* status. If all workflows are *KILLED*, the coordinator job status changes to KILLED. However, if any workflow job finishes with not *SUCCEEDED* and combination of *KILLED*, *FAILED* or *TIMEOUT*, oozie puts the coordinator job into *DONEWITHERROR*. If all coordinator actions are *TIMEDOUT*, oozie puts the coordinator job into *DONEWITHERROR*.
 
 
 ---++++ 6.1.3. Coordinator Action
@@ -849,11 +880,11 @@ The following example describes a synchronous coordinator application that runs 
       <datasets>
         <dataset name="logs" frequency="${coord:days(1)}"
                  initial-instance="2009-01-02T08:00Z" timezone="America/Los_Angeles">
-          <uri-template>hdfs://bar:9000/app/logs/${YEAR}${MONTH}/${DAY}/data</uri-template>
+          <uri-template>hdfs://bar:8020/app/logs/${YEAR}${MONTH}/${DAY}/data</uri-template>
         </dataset>
         <dataset name="siteAccessStats" frequency="${coord:days(1)}"
                  initial-instance="2009-01-02T08:00Z" timezone="America/Los_Angeles">
-          <uri-template>hdfs://bar:9000/app/stats/${YEAR}/${MONTH}/${DAY}/data</uri-template>
+          <uri-template>hdfs://bar:8020/app/stats/${YEAR}/${MONTH}/${DAY}/data</uri-template>
         </dataset>
       </datasets>
       <input-events>
@@ -868,7 +899,7 @@ The following example describes a synchronous coordinator application that runs 
       </output-events>
       <action>
         <workflow>
-          <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+          <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
           <configuration>
             <property>
               <name>wfInput</name>
@@ -892,15 +923,15 @@ The workflow job invocation for the single coordinator action would resolve to:
 
 <verbatim>
   <workflow>
-    <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+    <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
     <configuration>
       <property>
         <name>wfInput</name>
-        <value>hdfs://bar:9000/app/logs/200901/02/data</value>
+        <value>hdfs://bar:8020/app/logs/200901/02/data</value>
       </property>
       <property>
         <name>wfOutput</name>
-        <value>hdfs://bar:9000/app/stats/2009/01/02/data</value>
+        <value>hdfs://bar:8020/app/stats/2009/01/02/data</value>
       </property>
     </configuration>
   </workflow>
@@ -928,11 +959,11 @@ The coordinator application is identical, except for the frequency, 'end' date a
       <datasets>
         <dataset name="logs" frequency="${coord:days(1)}"
                  initial-instance="2009-01-02T08:00Z" timezone="America/Los_Angeles">
-          <uri-template>hdfs://bar:9000/app/logs/${YEAR}${MONTH}/${DAY}/data</uri-template>
+          <uri-template>hdfs://bar:8020/app/logs/${YEAR}${MONTH}/${DAY}/data</uri-template>
         </dataset>
         <dataset name="siteAccessStats" frequency="${coord:days(1)}"
                  initial-instance="2009-01-02T08:00Z" timezone="America/Los_Angeles">
-          <uri-template>hdfs://bar:9000/app/stats/${YEAR}/${MONTH}/${DAY}/data</uri-template>
+          <uri-template>hdfs://bar:8020/app/stats/${YEAR}/${MONTH}/${DAY}/data</uri-template>
         </dataset>
       </datasets>
       <input-events>
@@ -947,7 +978,7 @@ The coordinator application is identical, except for the frequency, 'end' date a
       </output-events>
       <action>
         <workflow>
-          <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+          <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
           <configuration>
             <property>
               <name>wfInput</name>
@@ -973,15 +1004,15 @@ The workflow job invocation for the first coordinator action would resolve to:
 
 <verbatim>
   <workflow>
-    <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+    <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
     <configuration>
       <property>
         <name>wfInput</name>
-        <value>hdfs://bar:9000/app/logs/200901/02/data</value>
+        <value>hdfs://bar:8020/app/logs/200901/02/data</value>
       </property>
       <property>
         <name>wfOutput</name>
-        <value>hdfs://bar:9000/app/stats/2009/01/02/data</value>
+        <value>hdfs://bar:8020/app/stats/2009/01/02/data</value>
       </property>
     </configuration>
   </workflow>
@@ -991,15 +1022,15 @@ For the second coordinator action it would resolve to:
 
 <verbatim>
   <workflow>
-    <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+    <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
     <configuration>
       <property>
         <name>wfInput</name>
-        <value>hdfs://bar:9000/app/logs/200901/03/data</value>
+        <value>hdfs://bar:8020/app/logs/200901/03/data</value>
       </property>
       <property>
         <name>wfOutput</name>
-        <value>hdfs://bar:9000/app/stats/2009/01/03/data</value>
+        <value>hdfs://bar:8020/app/stats/2009/01/03/data</value>
       </property>
     </configuration>
   </workflow>
@@ -1025,11 +1056,11 @@ The coordinator application frequency is weekly and it starts on the 7th day of 
       <datasets>
         <dataset name="logs" frequency="${coord:days(1)}"
                  initial-instance="2009-01-01T24:00Z" timezone="UTC">
-          <uri-template>hdfs://bar:9000/app/logs/${YEAR}${MONTH}/${DAY}</uri-template>
+          <uri-template>hdfs://bar:8020/app/logs/${YEAR}${MONTH}/${DAY}</uri-template>
         </dataset>
         <dataset name="weeklySiteAccessStats" frequency="${coord:days(7)}"
                  initial-instance="2009-01-07T24:00Z" timezone="UTC">
-          <uri-template>hdfs://bar:9000/app/weeklystats/${YEAR}/${MONTH}/${DAY}</uri-template>
+          <uri-template>hdfs://bar:8020/app/weeklystats/${YEAR}/${MONTH}/${DAY}</uri-template>
         </dataset>
       </datasets>
       <input-events>
@@ -1045,7 +1076,7 @@ The coordinator application frequency is weekly and it starts on the 7th day of 
       </output-events>
       <action>
         <workflow>
-          <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+          <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
           <configuration>
             <property>
               <name>wfInput</name>
@@ -1071,20 +1102,20 @@ The workflow job invocation for the first coordinator action would resolve to:
 
 <verbatim>
   <workflow>
-    <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+    <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
     <configuration>
       <property>
         <name>wfInput</name>
         <value>
-               hdfs://bar:9000/app/logs/200901/01,hdfs://bar:9000/app/logs/200901/02,
-               hdfs://bar:9000/app/logs/200901/03,hdfs://bar:9000/app/logs/200901/05,
-               hdfs://bar:9000/app/logs/200901/05,hdfs://bar:9000/app/logs/200901/06,
-               hdfs://bar:9000/app/logs/200901/07
+               hdfs://bar:8020/app/logs/200901/01,hdfs://bar:8020/app/logs/200901/02,
+               hdfs://bar:8020/app/logs/200901/03,hdfs://bar:8020/app/logs/200901/05,
+               hdfs://bar:8020/app/logs/200901/05,hdfs://bar:8020/app/logs/200901/06,
+               hdfs://bar:8020/app/logs/200901/07
         </value>
       </property>
       <property>
         <name>wfOutput</name>
-        <value>hdfs://bar:9000/app/stats/2009/01/07</value>
+        <value>hdfs://bar:8020/app/stats/2009/01/07</value>
       </property>
     </configuration>
   </workflow>
@@ -1094,20 +1125,20 @@ For the second coordinator action it would resolve to:
 
 <verbatim>
   <workflow>
-    <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+    <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
     <configuration>
       <property>
         <name>wfInput</name>
         <value>
-               hdfs://bar:9000/app/logs/200901/08,hdfs://bar:9000/app/logs/200901/09,
-               hdfs://bar:9000/app/logs/200901/10,hdfs://bar:9000/app/logs/200901/11,
-               hdfs://bar:9000/app/logs/200901/12,hdfs://bar:9000/app/logs/200901/13,
-               hdfs://bar:9000/app/logs/200901/16
+               hdfs://bar:8020/app/logs/200901/08,hdfs://bar:8020/app/logs/200901/09,
+               hdfs://bar:8020/app/logs/200901/10,hdfs://bar:8020/app/logs/200901/11,
+               hdfs://bar:8020/app/logs/200901/12,hdfs://bar:8020/app/logs/200901/13,
+               hdfs://bar:8020/app/logs/200901/16
         </value>
       </property>
       <property>
         <name>wfOutput</name>
-        <value>hdfs://bar:9000/app/stats/2009/01/16</value>
+        <value>hdfs://bar:8020/app/stats/2009/01/16</value>
       </property>
     </configuration>
   </workflow>
@@ -1144,7 +1175,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:hours(1)}"
                  initial-instance="${logsInitialInstance}" timezone="${timezone}">
           <uri-template>
-            hdfs://bar:9000/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}/${HOUR}
+            hdfs://bar:8020/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}/${HOUR}
           </uri-template>
         </dataset>
       </datasets>
@@ -1172,6 +1203,53 @@ In the above example there are 6 configuration parameters (variables) that have 
    * =language= : language to compute by this job, used in the uri-template
 
 IMPORTANT: Note that this example is not completely correct as it always consumes the last 24 instances of the 'logs' dataset. It is assumed that all days have 24 hours. For timezones that observe daylight saving this application will not work as expected as it will consume the wrong number of dataset instances in DST switch days. To be able to handle these scenarios, the =${coord:hoursInDays(int n)}= and =${coord:daysInMonths(int n)}= EL functions must be used (refer to section #6.6.2 and #6.6.3).
+
+If the above 6 properties are not specified, the job will fail. 
+
+As of schema 0.4, a list of formal parameters can be provided which will allow Oozie to verify, at submission time, that said 
+properties are actually specified (i.e. before the job is executed and fails). Default values can also be provided. 
+
+*Example:*
+
+The previous parameterized coordinator application definition with formal parameters:
+
+<verbatim>
+   <coordinator-app name="app-coord" frequency="${coord:days(1)}"
+                    start="${jobStart}" end="${jobEnd}" timezone="${timezone}"
+                    xmlns="uri:oozie:coordinator:0.1">
+      <parameters>
+          <property>
+              <name>jobStart</name>
+          </property>
+          <property>
+              <name>jobEnd</name>
+              <value>2012-12-01T22:00Z</value>
+          </property>
+      </parameters>
+      <datasets>
+        <dataset name="logs" frequency="${coord:hours(1)}"
+                 initial-instance="${logsInitialInstance}" timezone="${timezone}">
+          <uri-template>
+            hdfs://bar:8020/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}/${HOUR}
+          </uri-template>
+        </dataset>
+      </datasets>
+      <input-events>
+        <data-in name="input" dataset="logs">
+          <start-instance>${coord:current(-23)}</start-instance>
+          <end-instance>${coord:current(0)}</end-instance>
+        </data-in>
+      </input-events>
+      <action>
+        <workflow>
+        ...
+       </workflow>
+      </action>      
+   </coordinator-app>
+</verbatim>
+
+In the above example, if =jobStart= is not specified, Oozie will print an error message instead of submitting the job. If
+=jobEnd= is not specified, Oozie will use the default value, =2012-12-01T22:00Z=.
 
 ---+++ 6.6. Parameterization of Dataset Instances in Input and Output Events
 
@@ -1216,12 +1294,12 @@ Datasets Definition:
 .
   <dataset name="logs" frequency="${coord:days(1)}"
            initial-instance="2009-01-01T24:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}${MONTH}/${DAY}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}${MONTH}/${DAY}</uri-template>
   </dataset>
 .
   <dataset name="weeklySiteAccessStats" frequency="${coord:days(7)}"
            initial-instance="2009-01-07T24:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/weeklystats/${YEAR}/${MONTH}/${DAY}</uri-template>
+    <uri-template>hdfs://bar:8020/app/weeklystats/${YEAR}/${MONTH}/${DAY}</uri-template>
   </dataset>
 .
 </datasets>
@@ -1244,7 +1322,7 @@ Datasets Definition file 'datasets.xml':
 
   <dataset name="logs" frequency="${coord:hours(1)}"
            initial-instance="2009-01-01T01:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}${MONTH}/${DAY}/${HOUR}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}${MONTH}/${DAY}/${HOUR}</uri-template>
   </dataset>
 
 </datasets>
@@ -1257,7 +1335,7 @@ a. Coordinator application definition that creates a coordinator action once a d
                     start="2009-01-01T24:00Z" end="2009-12-31T24:00Z" timezone="UTC"
                     xmlns="uri:oozie:coordinator:0.1">
       <datasets>
-      	<include>hdfs://foo:9000/app/dataset-definitions/datasets.xml</include>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
       </datasets>
       <input-events>
         <data-in name="input" dataset="logs">
@@ -1284,7 +1362,7 @@ b. Coordinator application definition that creates a coordinator action once an 
                     start="2009-01-01T24:00Z" end="2009-12-31T24:00Z" timezone="UTC"
                     xmlns="uri:oozie:coordinator:0.1">
       <datasets>
-        <include>hdfs://foo:9000/app/dataset-definitions/datasets.xml</include>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
       </datasets>
       <input-events>
         <data-in name="input" dataset="logs">
@@ -1315,12 +1393,12 @@ Datasets Definition file 'datasets.xml':
 .
   <dataset name="logs" frequency="${coord:hours(1)}"
            initial-instance="2009-01-01T01:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
   </dataset>
 .
   <dataset name="stats" frequency="${coord:days(1)}"
            initial-instance="2009-01-01T24:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}</uri-template>
   </dataset>
 .
 </datasets>
@@ -1333,7 +1411,7 @@ Coordinator application definition:
                     start="2009-01-01T24:00Z" end="2009-12-31T24:00Z" timezone="UTC"
                     xmlns="uri:oozie:coordinator:0.1">
       <datasets>
-        <include>hdfs://foo:9000/app/dataset-definitions/datasets.xml</include>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
       </datasets>
       <input-events>
         <data-in name="input" dataset="logs">
@@ -1373,17 +1451,17 @@ Dataset definitions file 'datasets.xml':
 .
   <dataset name="15MinLogs" frequency="${coord:minutes(15)}"
            initial-instance="2009-01-01T00:15:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}/${MINUTE}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}/${MINUTE}</uri-template>
   </dataset>
 .
   <dataset name="1HourLogs" frequency="${coord:hours(1)}"
            initial-instance="2009-01-01T01:00:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
   </dataset>
 .
   <dataset name="1DayLogs" frequency="${coord:hours(24)}"
            initial-instance="2009-01-01T24:00:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}</uri-template>
   </dataset>
 </verbatim>
 
@@ -1394,7 +1472,7 @@ Coordinator application definitions. A data-pipeline with two coordinator-applic
                     start="2009-01-01T01:00Z" end="2009-12-31T24:00Z" timezone="UTC"
                     xmlns="uri:oozie:coordinator:0.1">
       <datasets>
-        <include>hdfs://foo:9000/app/dataset-definitions/datasets.xml</include>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
       </datasets>
       <input-events>
         <data-in name="input" dataset="15MinLogs">
@@ -1420,7 +1498,7 @@ Coordinator application definitions. A data-pipeline with two coordinator-applic
                     start="2009-01-01T24:00Z" end="2009-12-31T24:00Z" timezone="UTC"
                     xmlns="uri:oozie:coordinator:0.1">
       <datasets>
-        <include>hdfs://foo:9000/app/dataset-definitions/datasets.xml</include>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
       </datasets>
       <input-events>
         <data-in name="input" dataset="1HourLogs">
@@ -1447,7 +1525,139 @@ The 'app-coord-daily' coordinator application runs every every day, uses 24 inst
 
 The output datasets from the 'app-coord-hourly' coordinator application are the input to the 'app-coord-daily' coordinator application thereby forming a simple data-pipeline application.
 
----++++ 6.6.2. coord:hoursInDay(int n) EL Function for Synchronous Datasets
+---++++ 6.6.2. coord:offset(int n, String timeUnit) EL Function for Synchronous Datasets
+
+=${coord:offset(int n, String timeUnit)}= represents the n<sup>th</sup> timeUnit, relative to the coordinator action creation
+(materialization) time. The coordinator action creation (materialization) time is computed based on the coordinator job start time
+and its frequency.
+
+It is an alternative to the =${coord:current(int n)}= command (see previous section) and can be used anywhere
+=${coord:current(int n)}= can be used. The difference between the two functions is that =${coord:current(int n)}= computes an offset
+based on the n<sup>th</sup> multiple of the frequency, while =${coord:offset(int n, String timeUnit)}= computes an offset based on
+the n<sup>th</sup> multiple of =timeUnit=.
+
+=n= can be a negative integer, zero or a positive integer.
+
+=timeUnit= can be any one of the following constants: ="MINUTE"=, ="HOUR"=, ="DAY"=, ="MONTH"=, ="YEAR"=
+
+=${coord:offset(int n, String timeUnit)}= returns the nominal datetime for n<sup>th</sup> timeUnit relative to the coordinator
+action creation (materialization) time.
+
+When used directly, =${coord:offset(int n, String timeUnit)}= performs the following calculation:
+
+<verbatim>
+DS_FREQ: dataset frequency (minutes)
+CA_NT = coordinator action creation (materialization) nominal time
+coord:offset(int n, String timeUnit) = CA_NT + floor(timeUnit * n div DS_FREQ) * DS_FREQ
+</verbatim>
+
+NOTE: The formula above is not 100% correct, because DST changes the calculation has to account for hour shifts. Oozie Coordinator
+must make the correct calculation accounting for DTS hour shifts.
+
+When used in 'instance' or 'end-instance' XML elements, the above equation is used; the effect of the floor function is to
+"rewind" the resolved datetime to match the latest instance before the resolved time.
+When used in 'start-instance' XML elements, a slight modification to the above equation is used; instead of being "rewinded", the
+resolved datetime is "fastforwarded" to match the earliest instance after the resolved time.
+See the next two examples for more information.
+
+*%GREEN% Examples: %ENDCOLOR%*
+
+1. *=${coord:offset(int n, String timeUnit)}= datetime calculation:*
+
+Datasets Definition:
+
+<verbatim>
+<datasets>
+.
+  <dataset name="logs" frequency="${coord:days(1)}"
+           initial-instance="2009-01-01T24:00Z" timezone="UTC">
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}${MONTH}/${DAY}</uri-template>
+  </dataset>
+.
+  <dataset name="weeklySiteAccessStats" frequency="${coord:days(7)}"
+           initial-instance="2009-01-07T24:00Z" timezone="UTC">
+    <uri-template>hdfs://bar:8020/app/weeklystats/${YEAR}/${MONTH}/${DAY}</uri-template>
+  </dataset>
+.
+</datasets>
+</verbatim>
+
+For a coordinator action creation time: =2009-05-29T24:00Z= the =${coord:offset(int n, String timeUnit)}= EL function would resolve
+to the following datetime values for the 'logs' and 'weeklySiteStats' datasets:
+
+| *${coord:offset(int n, String timeUnit)}* | *Dataset 'logs'* | *Dataset 'weeklySiteAccessStats'* |
+| =${coord:offset(0, "MINUTE")}= <br/> =${coord:offset(0, "HOUR")}= <br/> =${coord:offset(0, "DAY")}= <br/> =${coord:offset(0, "MONTH")}= <br/> =${coord:offset(0, "YEAR")}= | =2009-05-29T24:00Z= | =2009-05-27T24:00Z= |
+| =${coord:offset(1440, "MINUTE")}= <br/> =${coord:offset(24, "HOUR")}= <br/> =${coord:offset(1, "DAY")}= | =2009-05-30T24:00Z= | =2009-05-27T24:00Z= |
+| =${coord:offset(-1440, "MINUTE")}= <br/> =${coord:offset(-24, "HOUR")}= <br/> =${coord:offset(-1, "DAY")}= | =2009-05-28T24:00Z= | =2009-05-20T24:00Z= |
+| =${coord:offset(-4320, "MINUTE")}= <br/> =${coord:offset(-72, "HOUR")}= <br/> =${coord:offset(-3, "DAY")}= | =2009-05-26T24:00Z= | =2009-05-20T24:00Z= |
+| =${coord:offset(11520, "MINUTE")}= <br/> =${coord:offset(192, "HOUR")}= <br/> =${coord:offset(8, "DAY")}= | =2009-06-06T24:00Z= | =2009-06-03T24:00Z= |
+| =${coord:offset(10, "MINUTE")}= | =2009-05-29T24:00Z= | =2009-05-27T24:00Z= |
+
+Some things to note about the above example:
+   1. When =n= is 0, the =timeUnit= doesn't really matter because 0 minutes is the same as 0 hours, 0 days, etc
+   2. There are multiple ways to express the same value (e.g. ${coord:offset(24, "HOUR")}= is equivalent to =${coord:offset(1, "DAY")}=)
+   3. The datetimes resolved for the 2 datasets differ when the =${coord:offset(int n, String timeUnit)}= function is invoked with the same arguments. This is because the =${coord:offset(int n, String timeUnit)}= function takes into consideration the initial-time and the frequency for the dataset for which is performing the calculation.
+   4. As mentioned before, if the resolved time doesn't fall exactly on an instance, it will get "rewinded" to match the latest instance before the resolved time.  For example, =${coord:offset(1, "DAY")}= is resolved to =2009-05-27T24:00Z= for the 'weeklysiteStats' dataset even though this is the same as =${coord:offset(0, "DAY")}=; this is because the frequency is 7 days, so =${coord:offset(1, "DAY")}= had to be "rewinded".
+
+2. *"fastforwarding" in <start-instance> =${coord:offset(int n, String timeUnit)}= calculation:*
+
+When specifying dataset instances, keep in mind that the resolved value of =${coord:offset(int n, String timeUnit)}= must line up
+with an offset of a multiple of the frequency when used in an 'instance' XML element.
+However, when used in ='start-instance'= and ='end-instance'= XML elements, this is not a requirement.  In this case, the function
+will automatically resolve the range of instances to match the offset of a multiple of the frequency that would fall between the
+='start-instance'= and ='end-instance'= XML elements; in other words, ='start-instance'= XML element is "fastforwarded" while
+='end-instance'= XML element is "rewinded".  So, in the example below, the frequency of the "logs" dataset is 1 hour while the
+='start-instance'= XML element is =${coord:offset(-90, "MINUTE")}= (-1.5 hours).  If this were in an ='instance'= XML element, it
+would be "rewinded", but here it is effectively equivalent to =${coord:offset(-60, "MINUTE")}= or =${coord:current(-1)}= as we are
+dealing with a range.
+
+Datasets Definition file 'datasets.xml':
+
+<verbatim>
+<datasets>
+.
+  <dataset name="logs" frequency="${coord:hours(1)}"
+           initial-instance="2009-01-01T01:00Z" timezone="UTC">
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+  </dataset>
+.
+  <dataset name="stats" frequency="${coord:days(1)}"
+           initial-instance="2009-01-01T24:00Z" timezone="UTC">
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}</uri-template>
+  </dataset>
+.
+</datasets>
+</verbatim>
+
+Coordinator application definition:
+
+<verbatim>
+   <coordinator-app name="app-coord" frequency="${coord:days(1)}"
+                    start="2009-01-01T24:00Z" end="2009-12-31T24:00Z" timezone="UTC"
+                    xmlns="uri:oozie:coordinator:0.1">
+      <datasets>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
+      </datasets>
+      <input-events>
+        <data-in name="input" dataset="logs">
+          <start-instance>${coord:offset(-90, "MINUTE")}</start-instance>
+          <end-instance>${coord:offset(0, "DAY")}</end-instance>
+        </data-in>
+      </input-events>
+      <output-events>
+        <data-out name="output" dataset="stats">
+          <instance>${coord:offset(0, "DAY")}</instance>
+        </data-out>
+      </output-events>
+      <action>
+        <workflow>
+        ...
+       </workflow>
+      </action>
+   </coordinator-app>
+</verbatim>
+
+---++++ 6.6.3. coord:hoursInDay(int n) EL Function for Synchronous Datasets
 
 The =${coord:hoursInDay(int n)}= EL function returns the number of hours for the specified day, in a timezone/daylight-saving sensitive way.
 
@@ -1482,7 +1692,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:hours(1)}"
                  initial-instance="${logsInitialInstance}" timezone="${timezone}">
           <uri-template>
-            hdfs://bar:9000/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}/${HOUR}
+            hdfs://bar:8020/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}/${HOUR}
           </uri-template>
         </dataset>
       </datasets>
@@ -1508,7 +1718,7 @@ For timezones observing daylight saving, on the days of DST switch, the function
 
 For timezones not observing daylight saving, it always returns =24=.
 
----++++ 6.6.3. coord:daysInMonth(int n) EL Function for Synchronous Datasets
+---++++ 6.6.4. coord:daysInMonth(int n) EL Function for Synchronous Datasets
 
 The =${coord:daysInMonth(int n)}= EL function returns the number of days for month of the specified day.
 
@@ -1546,7 +1756,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:days(1)}"
                  initial-instance="2009-01-01T24:00Z" timezone="UTC">
           <uri-template>
-            hdfs://bar:9000/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}
+            hdfs://bar:8020/app/logs/${market}/${language}/${YEAR}${MONTH}/${DAY}
           </uri-template>
         </dataset>
       </datasets>
@@ -1566,7 +1776,7 @@ Coordinator application definition:
 
 This example is a coordinator application that runs monthly, and consumes the daily feeds for the last month.
 
----++++ 6.6.4. coord:tzOffset() EL Function for Synchronous Datasets
+---++++ 6.6.5. coord:tzOffset() EL Function for Synchronous Datasets
 
 =${coord:tzOffset()}= EL function returns the difference in *minutes* between a dataset timezone and the coordinator job timezone at the current nominal time. This EL function is useful when dealing with datasets from multiple timezones, but execute in a different timezone.
 
@@ -1585,7 +1795,7 @@ IMPORTANT: While the offset is multiples of 60 for most timezones, it can be mul
 
 Refer to section #7, 3nd use case for a detailed example.
 
----++++ 6.6.5. coord:latest(int n) EL Function for Synchronous Datasets
+---++++ 6.6.6. coord:latest(int n) EL Function for Synchronous Datasets
 
 =${coord:latest(int n)}= represents the n<sup>th</sup> latest currently available instance of a *synchronous* dataset.
 
@@ -1611,7 +1821,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:hours(1)}"
                  initial-instance="2009-01-01T01:00Z" timezone="UTC">
           <uri-template>
-            hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
+            hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
           </uri-template>
         </dataset>
       </datasets>
@@ -1632,26 +1842,26 @@ Coordinator application definition:
 If the available dataset instances in HDFS at time of a coordinator action being executed are:
 
 <verbatim>
-  hdfs://bar:9000/app/logs/2009/01/01
-  hdfs://bar:9000/app/logs/2009/01/02
-  hdfs://bar:9000/app/logs/2009/01/03
+  hdfs://bar:8020/app/logs/2009/01/01
+  hdfs://bar:8020/app/logs/2009/01/02
+  hdfs://bar:8020/app/logs/2009/01/03
   	(missing)
-  hdfs://bar:9000/app/logs/2009/01/05
+  hdfs://bar:8020/app/logs/2009/01/05
   (missing)
-  hdfs://bar:9000/app/logs/2009/01/07
+  hdfs://bar:8020/app/logs/2009/01/07
   (missing)
   (missing)
-  hdfs://bar:9000/app/logs/2009/01/10
+  hdfs://bar:8020/app/logs/2009/01/10
 </verbatim>
 
 Then, the dataset instances for the input events for the coordinator action will be:
 
 <verbatim>
-  hdfs://bar:9000/app/logs/2009/01/05
-  hdfs://bar:9000/app/logs/2009/01/10
+  hdfs://bar:8020/app/logs/2009/01/05
+  hdfs://bar:8020/app/logs/2009/01/10
 </verbatim>
 
----++++ 6.6.6. coord:future(int n, int limit) EL Function for Synchronous Datasets
+---++++ 6.6.7. coord:future(int n, int limit) EL Function for Synchronous Datasets
 
 =${coord:future(int n, int limit)}= represents the n<sup>th</sup> currently available future instance of a *synchronous* dataset while looking ahead for 'limit' number of instances.
 
@@ -1675,7 +1885,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:hours(1)}"
                  initial-instance="2009-01-01T01:00Z" timezone="UTC">
           <uri-template>
-            hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
+            hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
           </uri-template>
         </dataset>
       </datasets>
@@ -1696,39 +1906,39 @@ Coordinator application definition:
 If the available dataset instances in HDFS at time of a coordinator action being executed are:
 
 <verbatim>
-  hdfs://bar:9000/app/logs/2009/02/01
+  hdfs://bar:8020/app/logs/2009/02/01
   (missing)
   (missing)
   (missing)
-  hdfs://bar:9000/app/logs/2009/02/04
+  hdfs://bar:8020/app/logs/2009/02/04
  (missing)
  (missing)
-  hdfs://bar:9000/app/logs/2009/02/07
+  hdfs://bar:8020/app/logs/2009/02/07
   (missing)
   (missing)
   (missing)
-  hdfs://bar:9000/app/logs/2009/02/11
+  hdfs://bar:8020/app/logs/2009/02/11
   (missing)
   (missing)
-  hdfs://bar:9000/app/logs/2009/02/14
+  hdfs://bar:8020/app/logs/2009/02/14
   (missing)
-  hdfs://bar:9000/app/logs/2009/02/16
+  hdfs://bar:8020/app/logs/2009/02/16
 </verbatim>
 
 Then, the dataset instances for the input events for the coordinator action will be:
 
 <verbatim>
-  hdfs://bar:9000/app/logs/2009/02/01
-  hdfs://bar:9000/app/logs/2009/02/07
+  hdfs://bar:8020/app/logs/2009/02/01
+  hdfs://bar:8020/app/logs/2009/02/07
 </verbatim>
 
----++++ 6.6.7. coord:version(int n) EL Function for Asynchronous Datasets
+---++++ 6.6.8. coord:version(int n) EL Function for Asynchronous Datasets
    * TBD
 
----++++ 6.6.8. coord:latest(int n) EL Function for Asynchronous Datasets
+---++++ 6.6.9. coord:latest(int n) EL Function for Asynchronous Datasets
    * TBD
 
----++++ 6.6.9. Dataset Instance Resolution for Instances Before the Initial Instance
+---++++ 6.6.10. Dataset Instance Resolution for Instances Before the Initial Instance
 
 When defining input events that refer to dataset instances it may be possible that the resolution of instances is out of it lower bound. This is scenario is likely to happen when the instance resolution is very close to the initial-instance. This is useful for bootstrapping the application.
 
@@ -1746,7 +1956,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:hours(1)}"
                  initial-instance="2009-01-01T00:00Z"  timezone="UTC">
           <uri-template>
-            hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
+            hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
           </uri-template>
         </dataset>
       </datasets>
@@ -1790,7 +2000,7 @@ Coordinator application definition:
         <dataset name="logs" frequency="${coord:hours(1)}"
                  initial-instance="2009-01-01T01:00Z" timezone="UTC">
           <uri-template>
-             hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
+             hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}
           </uri-template>
         </dataset>
       </datasets>
@@ -1802,7 +2012,7 @@ Coordinator application definition:
       </input-events>
       <action>
         <workflow>
-          <app-path>hdfs://bar:9000/usr/joe/logsprocessor-wf</app-path>
+          <app-path>hdfs://bar:8020/usr/joe/logsprocessor-wf</app-path>
           <configuration>
             <property>
               <name>wfInput</name>
@@ -1819,11 +2029,11 @@ In this example, each coordinator action will use as input events the the last d
 The =${coord:dataIn(String name)}= function enables the coordinator application to pass the URIs of all the dataset instances for the last day to the workflow job triggered by the coordinator action. For the =2009-01-02T00:00Z" run, the =${coord:dataIn('inputLogs')}= function will resolve to:
 
 <verbatim>
-  hdfs://bar:9000/app/logs/2009/01/01/01,
-  hdfs://bar:9000/app/logs/2009/01/01/02,
+  hdfs://bar:8020/app/logs/2009/01/01/01,
+  hdfs://bar:8020/app/logs/2009/01/01/02,
   ...
-  hdfs://bar:9000/app/logs/2009/01/01/23,
-  hdfs://bar:9000/app/logs/2009/02/00/00
+  hdfs://bar:8020/app/logs/2009/01/01/23,
+  hdfs://bar:8020/app/logs/2009/02/00/00
 </verbatim>
 
 The =${coord:dataIn('inputLogs')}= is used for workflow job configuration property 'wfInput' for the workflow job that will be submitted by the coordinator action on January 2nd 2009. Thus, when the workflow job gets started, the 'wfInput' workflow job configuration property will contain all the above URIs.
@@ -1845,12 +2055,12 @@ Datasets Definition file 'datasets.xml'
 .
   <dataset name="hourlyLogs" frequency="${coord:hours(1)}"
            initial-instance="2009-01-01T01:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+    <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
   </dataset>
 .
   <dataset name="dailyLogs" frequency="${coord:days(1)}"
            initial-instance="2009-01-01T24:00Z" timezone="UTC">
-    <uri-template>hdfs://bar:9000/app/daily-logs/${YEAR}/${MONTH}/${DAY}</uri-template>
+    <uri-template>hdfs://bar:8020/app/daily-logs/${YEAR}/${MONTH}/${DAY}</uri-template>
   </dataset>
 </datasets>
 </verbatim>
@@ -1862,7 +2072,7 @@ Coordinator application definition:
                     start="2009-01-01T24:00Z" end="2009-12-31T24:00Z" timezone="UTC"
                     xmlns="uri:oozie:coordinator:0.1">
       <datasets>
-        <include>hdfs://foo:9000/app/dataset-definitions/datasets.xml</include>
+        <include>hdfs://foo:8020/app/dataset-definitions/datasets.xml</include>
       </datasets>
       <input-events>
         <data-in name="inputLogs" dataset="hourlyLogs">
@@ -1877,7 +2087,7 @@ Coordinator application definition:
       </output-events>
       <action>
         <workflow>
-          <app-path>hdfs://bar:9000/usr/joe/logsaggretor-wf</app-path>
+          <app-path>hdfs://bar:8020/usr/joe/logsaggretor-wf</app-path>
           <configuration>
             <property>
               <name>wfInput</name>
@@ -1898,7 +2108,7 @@ In this example, each coordinator action will use as input events the the last 2
 The =${coord:dataOut(String name)}= function enables the coordinator application to pass the URIs of the the dataset instance that will be created by the workflow job triggered by the coordinator action. For the =2009-01-01T24:00Z" run, the =${coord:dataOut('dailyLogs')}= function will resolve to:
 
 <verbatim>
-  hdfs://bar:9000/app/logs/2009/01/02
+  hdfs://bar:8020/app/logs/2009/01/02
 </verbatim>
 
 NOTE: The use of =24:00= as hour is useful for human to denote end of the day, but internally Oozie handles it as the zero hour of the next day.
@@ -1924,7 +2134,7 @@ Coordinator application definition:
      <datasets>
        <dataset name="hourlyLogs" frequency="${coord:hours(1)}"
                 initial-instance="2009-01-01T01:00Z" timezone="UTC">
-         <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+         <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
        </dataset>
      </datasets>
       <input-events>
@@ -1980,7 +2190,7 @@ Coordinator application definition:
      <datasets>
        <dataset name="hourlyLogs" frequency="${coord:hours(1)}"
                 initial-instance="2011-04-01T01:00Z" timezone="UTC">
-         <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+         <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
        </dataset>
      </datasets>
       <input-events>
@@ -2036,7 +2246,7 @@ For example, if baseDate is '2009-01-01T00:00Z', instance is '2' and timeUnit is
       ......
       <action>
         <workflow>
-          <app-path>hdfs://bar:9000/usr/joe/logsaggretor-wf</app-path>
+          <app-path>hdfs://bar:8020/usr/joe/logsaggretor-wf</app-path>
           <configuration>
             <property>
               <name>nextInstance</name>
@@ -2083,7 +2293,7 @@ Coordinator application definition: A daily coordinator job for India timezone (
       <datasets>
         <dataset name="hourlyLogs" frequency="${coord:hours(1)}"
                  initial-instance="2008-12-31T19:30Z"  timezone="UTC">
-          <uri-template>hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
+          <uri-template>hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}</uri-template>
         </dataset>
       </datasets>
       <input-events>
@@ -2117,7 +2327,7 @@ The following 2 use cases will be used to show how Oozie Coordinator built-in fu
     <dataset name="eastlogs" frequency="${coord:hours(1)}"
              initial-instance="2009-01-01T06:00Z" timezone="America/New_York">
       <uri-template>
-         hdfs://bar:9000/app/logs/eastcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
+         hdfs://bar:8020/app/logs/eastcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
       </uri-template>
     </dataset>
   </datasets>
@@ -2129,7 +2339,7 @@ The following 2 use cases will be used to show how Oozie Coordinator built-in fu
   </input-events>
   <action>
    <workflow>
-     <app-path>hdfs://bar:9000/usr/joe/logsaggretor-wf</app-path>
+     <app-path>hdfs://bar:8020/usr/joe/logsaggretor-wf</app-path>
      <configuration>
        <property>
          <name>wfInput</name>
@@ -2159,13 +2369,13 @@ Note that because the coordinator application and the dataset are in the same ti
     <dataset name="eastlogs" frequency="${coord:hours(1)}"
              initial-instance="2009-01-01T06:00Z" timezone="America/New_York">
       <uri-template>
-         hdfs://bar:9000/app/logs/eastcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
+         hdfs://bar:8020/app/logs/eastcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
       </uri-template>
     </dataset>
     <dataset name="estlogs" frequency="${coord:hours(1)}"
              initial-instance="2009-01-01T09:00Z" timezone="America/Los_Angeles">
       <uri-template>
-         hdfs://bar:9000/app/logs/westcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
+         hdfs://bar:8020/app/logs/westcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
       </uri-template>
     </dataset>
   </datasets>
@@ -2181,7 +2391,7 @@ Note that because the coordinator application and the dataset are in the same ti
   </input-events>
   <action>
    <workflow>
-     <app-path>hdfs://bar:9000/usr/joe/logsaggretor-wf</app-path>
+     <app-path>hdfs://bar:8020/usr/joe/logsaggretor-wf</app-path>
      <configuration>
        <property>
          <name>wfInput</name>
@@ -2209,13 +2419,13 @@ The data input range for the East coast dataset must be adjusted (with -3) in or
     <dataset name="eastlogs" frequency="${coord:hours(1)}"
              initial-instance="2009-01-01T06:00Z" timezone="America/New_York">
       <uri-template>
-         hdfs://bar:9000/app/logs/eastcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
+         hdfs://bar:8020/app/logs/eastcoast/${YEAR}/${MONTH}/${DAY}/${HOUR}
       </uri-template>
     </dataset>
     <dataset name="europelogs" frequency="${coord:hours(1)}"
              initial-instance="2009-01-01T01:00Z" timezone="Europe/Berlin">
       <uri-template>
-         hdfs://bar:9000/app/logs/europe/${YEAR}/${MONTH}/${DAY}/${HOUR}
+         hdfs://bar:8020/app/logs/europe/${YEAR}/${MONTH}/${DAY}/${HOUR}
       </uri-template>
     </dataset>
   </datasets>
@@ -2231,7 +2441,7 @@ The data input range for the East coast dataset must be adjusted (with -3) in or
   </input-events>
   <action>
    <workflow>
-     <app-path>hdfs://bar:9000/usr/joe/logsaggretor-wf</app-path>
+     <app-path>hdfs://bar:8020/usr/joe/logsaggretor-wf</app-path>
      <configuration>
        <property>
          <name>wfInput</name>
@@ -2332,7 +2542,7 @@ must be submitted to the Oozie coordinator engine using an XML configuration fil
     </property>
     <property>
         <name>oozie.coord.application.path</name>
-        <value>hdfs://foo:9000/user/joe/myapps/hello-coord.xml</value>
+        <value>hdfs://foo:8020/user/joe/myapps/hello-coord.xml</value>
     </property>
     ...
 </configuration>
@@ -2357,7 +2567,7 @@ If you add *sla* tags to the Coordinator or Workflow XML files, then the SLA inf
                  initial-instance="2009-01-01T09:00Z"
                  timezone="America/Los_Angeles">
             <uri-template>
-                hdfs://bar:9000/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}/data
+                hdfs://bar:8020/app/logs/${YEAR}/${MONTH}/${DAY}/${HOUR}/data
             </uri-template>
         </dataset>
     </datasets>
@@ -2369,7 +2579,7 @@ If you add *sla* tags to the Coordinator or Workflow XML files, then the SLA inf
     </input-events>
     <action>
         <workflow>
-            <app-path>hdfs://bar:9000/usr/joe/hello-wf</app-path>
+            <app-path>hdfs://bar:8020/usr/joe/hello-wf</app-path>
             <configuration>
                 <property>
                     <name>input</name>
@@ -2382,10 +2592,10 @@ If you add *sla* tags to the Coordinator or Workflow XML files, then the SLA inf
             <sla:should-start>${5 * MINUTES}</sla:should-start>
             <sla:should-end>${55 * MINUTES}</sla:should-end>
             <sla:message>log processor run for: ${coord:nominalTime()}</sla:message>
-            <sla:alert-contact>joe@yahoo-inc.com</sla:alert-contact>
-            <sla:dev-contact>abc@yahoo-inc.com</sla:dev-contact>
-            <sla:qa-contact>abc@yahoo-inc.com</sla:qa-contact>
-            <sla:se-contact>abc@yahoo-inc.com</sla:se-contact>
+            <sla:alert-contact>joe@example.com</sla:alert-contact>
+            <sla:dev-contact>abc@example.com</sla:dev-contact>
+            <sla:qa-contact>abc@example.com</sla:qa-contact>
+            <sla:se-contact>abc@example.com</sla:se-contact>
             <sla:upstream-apps>application-a,application-b</sla:upstream-apps>
             <sla:alert-percentage>99</sla:alert-percentage>
             <sla:alert-frequency>${24 * LAST_HOUR}</sla:alert-frequency>
@@ -2427,10 +2637,10 @@ If you add *sla* tags to the Coordinator or Workflow XML files, then the SLA inf
         <sla:should-start>${10 * MINUTES}</sla:should-start>
         <sla:should-end>${30 * MINUTES}</sla:should-end>
         <sla:message>abc.grouper for input ${input}</sla:message>
-        <sla:alert-contact>joe@yahoo-inc.com</sla:alert-contact>
-        <sla:dev-contact>abc@yahoo-inc.com</sla:dev-contact>
-        <sla:qa-contact>abc@yahoo-inc.com</sla:qa-contact>
-        <sla:se-contact>abc@yahoo-inc.com</sla:se-contact>
+        <sla:alert-contact>joe@example.com</sla:alert-contact>
+        <sla:dev-contact>abc@example.com</sla:dev-contact>
+        <sla:qa-contact>abc@example.com</sla:qa-contact>
+        <sla:se-contact>abc@example.com</sla:se-contact>
         <sla:upstream-apps>applicaion-a,application-b</sla:upstream-apps>
         <sla:alert-percentage>99</sla:alert-percentage>
         <sla:alert-frequency>${24 * LAST_HOUR}</sla:alert-frequency>
@@ -2443,265 +2653,7 @@ If you add *sla* tags to the Coordinator or Workflow XML files, then the SLA inf
 
 ---++ 13. Web Services API
 
----+++ 13.1 System Status
-
-*Request:*
-
-<verbatim>
-GET oozie/v1/admin/status
-</verbatim>
-
-*Response:*
-
-<verbatim>
-{"systemMode":"NORMAL"}
-</verbatim>
-
----+++ 13.2 List Jobs
----++++ Workflow Jobs
-
-*Request:*
-
-<verbatim>
-POST oozie/v1/jobs?jobtype=wf&len=50&offset=1
-</verbatim>   
-
-*Response:*
-<verbatim>
-{
-   "total":2,
-   "workflows":[
-      {
-         "appPath":null,
-         "status":"KILLED",
-         "createdTime":"Tue, 27 Apr 2010 01:50:45 GMT",
-         "conf":null,
-         "lastModTime":"Tue, 27 Apr 2010 01:51:04 GMT",
-         "endTime":"Tue, 27 Apr 2010 01:51:04 GMT",
-         "run":0,
-         "externalId":null,
-         "appName":"map-reduce-wf",
-         "id":"0000000-100426185037406-oozie-dani-W",
-         "startTime":"Tue, 27 Apr 2010 01:50:47 GMT",
-         "group":"users",
-         "consoleUrl":"http:\/\/localhost:8080\/oozie?job=jobid1-W",
-         "user":"danielwo",
-         "actions":[
-
-         ]
-      },
-      {
-         "appPath":null,
-         "status":"KILLED",
-         "createdTime":"Mon, 26 Apr 2010 22:31:15 GMT",
-         "conf":null,
-         "lastModTime":"Wed, 28 Apr 2010 22:39:18 GMT",
-         "endTime":"Wed, 28 Apr 2010 22:39:18 GMT",
-         "run":0,
-         "externalId":null,
-         "appName":"map-reduce-wf",
-         "id":"0000005-100426151754515-oozie-dani-W",
-         "startTime":null,
-         "group":"users",
-         "consoleUrl":"http:\/\/localhost:8080\/oozie?job=jobd2-W",
-         "user":"danielwo",
-         "actions":[
-
-         ]
-      }
-   ],
-   "len":50,
-   "offset":1
-}
-</verbatim>
-
----++++ Coordinator Jobs
-
-*Request:*
-<verbatim>
-POST oozie/v1/jobs?jobtype=coord&len=50&offset=1   
-</verbatim>
-
-*Response:*
-<verbatim>
-{
-   "total":2,
-   "coordinatorjobs":[
-      {
-         "lastAction":"Sun, 01 Feb 2009 01:00:00 GMT",
-         "coordJobName":"my_coord_job",
-         "status":"SUCCEEDED",
-         "coordJobPath":"hdfs:\/\/localhost:9000\/user\/danielwo\/coord",
-         "timeZone":"UTC",
-         "conf":null,
-         "frequency":60,
-         "endTime":"Sun, 01 Feb 2009 00:05:00 GMT",
-         "executionPolicy":"LIFO",
-         "startTime":"Sun, 01 Feb 2009 00:00:00 GMT",
-         "timeOut":-1,
-         "nextMaterializedTime":"Sun, 01 Feb 2009 01:00:00 GMT",
-         "timeUnit":"MINUTE",
-         "concurrency":-1,
-         "coordJobId":"0000000-100426180048624-oozie-dani-C",
-         "coordExternalId":null,
-         "group":"users",
-         "consoleUrl":null,
-         "user":"danielwo",
-         "actions":[
-
-         ]
-      },
-      {
-         "lastAction":"Sun, 01 Feb 2009 01:00:00 GMT",
-         "coordJobName":"my_coord_job",
-         "status":"SUCCEEDED",
-         "coordJobPath":"hdfs:\/\/localhost:9000\/user\/danielwo\/coord",
-         "timeZone":"UTC",
-         "conf":null,
-         "frequency":60,
-         "endTime":"Sun, 01 Feb 2009 00:05:00 GMT",
-         "executionPolicy":"LIFO",
-         "startTime":"Sun, 01 Feb 2009 00:00:00 GMT",
-         "timeOut":-1,
-         "nextMaterializedTime":"Sun, 01 Feb 2009 01:00:00 GMT",
-         "timeUnit":"MINUTE",
-         "concurrency":-1,
-         "coordJobId":"0000000-100426145525486-oozie-dani-C",
-         "coordExternalId":null,
-         "group":"users",
-         "consoleUrl":null,
-         "user":"danielwo",
-         "actions":[
-
-         ]
-      }
-   ],
-   "len":50,
-   "offset":1
-}
-</verbatim>
-
-
----+++ 13.3 Job Submission
-
-<verbatim>
-PUT oozie/v1/jobs?action=start
-</verbatim>
-
----+++ 13.4 Job Information
-
----++++ Workflow Job Information
-*Request:*
-<verbatim>
-GET oozie/v1/job/0000000-100426185037406-oozie-jobid-W?show=info&len=0&offset=0
-</verbatim>
-
-*Response:*
-<verbatim>
-{
-   "appPath":"hdfs:\/\/localhost:9000\/user\/danielwo\/workflow",
-   "status":"KILLED",
-   "createdTime":"Tue, 27 Apr 2010 01:50:45 GMT",
-   "conf":"<configuration>...<\/configuration>",
-   "lastModTime":"Tue, 27 Apr 2010 01:51:04 GMT",
-   "endTime":"Tue, 27 Apr 2010 01:51:04 GMT",
-   "run":0,
-   "externalId":null,
-   "appName":"map-reduce-wf",
-   "id":"0000000-100426185037406-oozie-dani-W",
-   "startTime":"Tue, 27 Apr 2010 01:50:47 GMT",
-   "group":"users",
-   "consoleUrl":"http:\/\/localhost:8080\/oozie?job=...",
-   "user":"danielwo",
-   "actions":[
-      {
-         "errorMessage":"Output directory already exists",
-         "status":"ERROR",
-         "data":null,
-         "transition":"fail",
-         "externalStatus":"FAILED\/KILLED",
-         "conf":"<map-reduce xmlns=\"uri:oozie:workflow:0.2\"> ...<\/map-reduce>",
-         "type":"map-reduce",
-         "endTime":"Tue, 27 Apr 2010 01:51:04 GMT",
-         "externalId":"job_201004261212_0025",
-         "id":"0000000-100426185037406-oozie-dani-W@hadoop1",
-         "startTime":"Tue, 27 Apr 2010 01:50:49 GMT",
-         "name":"hadoop1",
-         "errorCode":"JA018",
-         "retries":0,
-         "trackerUri":"localhost:9001",
-         "consoleUrl":"http:\/\/localhost:50030\/jobdetails.jsp?jobid=..."
-      }
-   ]
-}
-</verbatim>
-
----++++ Coordinator Job Information
-*Request:*
-<verbatim>
-GET oozie/v1/job/0000000-100426185037406-oozie-jobid-C?show=info&len=0&offset=0
-</verbatim>
-
-*Response:*
-<verbatim>
-{
-   "lastAction":null,
-   "coordJobName":"my_coord_job",
-   "status":"SUCCEEDED",
-   "coordJobPath":"hdfs:\/\/localhost:9000\/user\/danielwo\/coord",
-   "timeZone":"UTC",
-   "conf":"<configuration>...<\/configuration>",
-   "frequency":60,
-   "endTime":null,
-   "executionPolicy":"LIFO",
-   "startTime":null,
-   "timeOut":-1,
-   "nextMaterializedTime":null,
-   "timeUnit":"MINUTE",
-   "concurrency":-1,
-   "coordJobId":"0000000-100426180048624-oozie-dani-C",
-   "coordExternalId":null,
-   "group":"users",
-   "consoleUrl":null,
-   "user":"danielwo",
-   "actions":[
-      {
-         "errorMessage":null,
-         "lastModifiedTime":"Tue, 27 Apr 2010 01:01:30 GMT",
-         "createdTime":"Tue, 27 Apr 2010 01:01:12 GMT",
-         "status":"KILLED",
-         "externalStatus":null,
-         "type":null,
-         "externalId":"0000001-100426180048624-oozie-dani-W",
-         "id":"0000000-100426180048624-oozie-dani-C@1",
-         "createdConf":"<configuration>...<\/configuration>",
-         "actionNumber":1,
-         "errorCode":null,
-         "trackerUri":null,
-         "coordJobId":"0000000-100426180048624-oozie-dani-C",
-         "consoleUrl":null
-      }
-   ]
-}
-</verbatim>
-
----+++ 13.5 Job Definition
-
-<verbatim>
-GET oozie/v1/job/0000005-100426151754515-oozie-jobid-W?show=definition
-</verbatim>
-
----+++ 13.6 Job Log
-
-<verbatim>
-GET oozie/v1/job/0000005-100426151754515-oozie-jobid-W?show=log
-</verbatim>
-
----+++ 13.7 KIll a Job
-
-<verbatim>
-PUT oozie/v1/job/0000005-100426151754515-oozie-jobid-W?action=kill
-</verbatim>
+See the [[WebServicesAPI][Web Services API]] page.
 
 ---++ 14. Coordinator Rerun
 ---+++ Rerunning a Coordinator Action or Multiple Actions
@@ -2861,6 +2813,131 @@ Refer to the [[DG_CoordinatorRerun][Rerunning Coordinator Actions]] for details 
         <xs:attribute name="start" type="xs:string" use="required"/>
         <xs:attribute name="end" type="xs:string" use="required"/>
         <xs:attribute name="timezone" type="xs:string" use="required"/>
+    </xs:complexType>
+    <xs:complexType name="CONTROLS">
+        <xs:sequence minOccurs="0" maxOccurs="1">
+            <xs:element name="timeout" type="xs:string" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="concurrency" type="xs:string" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="execution" type="xs:string" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="throttle" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="DATASETS">
+        <xs:sequence minOccurs="0" maxOccurs="1">
+            <xs:element name="include" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:choice minOccurs="0" maxOccurs="unbounded">
+                <xs:element name="dataset" type="coordinator:SYNCDATASET" minOccurs="0" maxOccurs="1"/>
+            </xs:choice>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="SYNCDATASET">
+        <xs:sequence>
+            <xs:element name="uri-template" type="xs:string" minOccurs="1" maxOccurs="1"/>
+            <xs:element name="done-flag" type="xs:string" minOccurs="0" maxOccurs="1"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="coordinator:IDENTIFIER" use="required"/>
+        <xs:attribute name="frequency" type="xs:string" use="required"/>
+        <xs:attribute name="initial-instance" type="xs:string" use="required"/>
+        <xs:attribute name="timezone" type="xs:string" use="required"/>
+    </xs:complexType>
+    <xs:complexType name="INPUTEVENTS">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="data-in" type="coordinator:DATAIN" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="DATAIN">
+        <xs:choice minOccurs="1" maxOccurs="1">
+            <xs:element name="instance" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
+            <xs:sequence minOccurs="1" maxOccurs="1">
+                <xs:element name="start-instance" type="xs:string" minOccurs="1" maxOccurs="1"/>
+                <xs:element name="end-instance" type="xs:string" minOccurs="1" maxOccurs="1"/>
+            </xs:sequence>
+        </xs:choice>
+        <xs:attribute name="name" type="coordinator:IDENTIFIER" use="required"/>
+        <xs:attribute name="dataset" type="coordinator:IDENTIFIER" use="required"/>
+    </xs:complexType>
+    <xs:complexType name="OUTPUTEVENTS">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="data-out" type="coordinator:DATAOUT" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="DATAOUT">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="instance" type="xs:string" minOccurs="1" maxOccurs="1"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="coordinator:IDENTIFIER" use="required"/>
+        <xs:attribute name="dataset" type="coordinator:IDENTIFIER" use="required"/>
+    </xs:complexType>
+    <xs:complexType name="ACTION">
+        <xs:sequence minOccurs="1" maxOccurs="1">
+            <xs:element name="workflow" type="coordinator:WORKFLOW" minOccurs="1" maxOccurs="1"/>
+            <xs:any namespace="uri:oozie:sla:0.1" minOccurs="0" maxOccurs="1"/>
+        </xs:sequence>
+    </xs:complexType>
+    <xs:complexType name="WORKFLOW">
+        <xs:sequence>
+            <xs:element name="app-path" type="xs:string" minOccurs="1" maxOccurs="1"/>
+            <xs:element name="configuration" type="coordinator:CONFIGURATION" minOccurs="0" maxOccurs="1"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="FLAG"/>
+    <xs:complexType name="CONFIGURATION">
+        <xs:sequence>
+            <xs:element name="property" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="name" minOccurs="1" maxOccurs="1" type="xs:string"/>
+                        <xs:element name="value" minOccurs="1" maxOccurs="1" type="xs:string"/>
+                        <xs:element name="description" minOccurs="0" maxOccurs="1" type="xs:string"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>
+</verbatim>
+
+---++++ Oozie Coordinator Schema 0.4
+
+<verbatim>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:coordinator="uri:oozie:coordinator:0.2"
+           elementFormDefault="qualified" targetNamespace="uri:oozie:coordinator:0.2">
+
+    <xs:element name="coordinator-app" type="coordinator:COORDINATOR-APP"/>
+    <xs:element name="datasets" type="coordinator:DATASETS"/>
+    <xs:simpleType name="IDENTIFIER">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="([a-zA-Z]([\-_a-zA-Z0-9])*){1,39})"/>
+        </xs:restriction>
+    </xs:simpleType>
+    <xs:complexType name="COORDINATOR-APP">
+        <xs:sequence>
+            <xs:element name="parameters" type="coordinator:PARAMETERS" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="controls" type="coordinator:CONTROLS" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="datasets" type="coordinator:DATASETS" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="input-events" type="coordinator:INPUTEVENTS" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="output-events" type="coordinator:OUTPUTEVENTS" minOccurs="0" maxOccurs="1"/>
+            <xs:element name="action" type="coordinator:ACTION" minOccurs="1" maxOccurs="1"/>
+        </xs:sequence>
+        <xs:attribute name="name" type="coordinator:IDENTIFIER" use="required"/>
+        <xs:attribute name="frequency" type="xs:string" use="required"/>
+        <xs:attribute name="start" type="xs:string" use="required"/>
+        <xs:attribute name="end" type="xs:string" use="required"/>
+        <xs:attribute name="timezone" type="xs:string" use="required"/>
+    </xs:complexType>
+    <xs:complexType name="PARAMETERS">
+        <xs:sequence>
+            <xs:element name="property" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:sequence>
+                        <xs:element name="name" minOccurs="1" maxOccurs="1" type="xs:string"/>
+                        <xs:element name="value" minOccurs="0" maxOccurs="1" type="xs:string"/>
+                        <xs:element name="description" minOccurs="0" maxOccurs="1" type="xs:string"/>
+                    </xs:sequence>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
     </xs:complexType>
     <xs:complexType name="CONTROLS">
         <xs:sequence minOccurs="0" maxOccurs="1">

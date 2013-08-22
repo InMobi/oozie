@@ -1,0 +1,6 @@
+----------------------------------------------------------------
+2013-08-08 08:00:23.800 GMT:
+ Booting Derby version The Apache Software Foundation - Apache Derby - 10.6.1.0 - (938214): instance a816c00e-0140-5cf0-dba1-000006f59d70 
+on database directory /home/suhas/git-workspace/oozie/core/target/test-data/oozietests/org.apache.oozie.action.hadoop.TestHiveMain/testMain/db   with class loader sun.misc.Launcher$AppClassLoader@3b6cdbb8
+
+Database Class Loader started - derby.database.classpath=''

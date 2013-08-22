@@ -26,20 +26,20 @@ import org.apache.oozie.ErrorCode;
 import org.apache.oozie.SLAEventBean;
 import org.apache.oozie.WorkflowJobBean;
 import org.apache.oozie.XException;
+import org.apache.oozie.service.JPAService;
+import org.apache.oozie.service.Services;
+import org.apache.oozie.util.LogUtils;
+import org.apache.oozie.util.db.SLADbOperations;
 import org.apache.oozie.client.CoordinatorAction;
+import org.apache.oozie.client.WorkflowJob;
 import org.apache.oozie.client.SLAEvent.SlaAppType;
 import org.apache.oozie.client.SLAEvent.Status;
-import org.apache.oozie.client.WorkflowJob;
 import org.apache.oozie.client.rest.JsonBean;
 import org.apache.oozie.command.CommandException;
 import org.apache.oozie.command.PreconditionException;
 import org.apache.oozie.executor.jpa.BulkUpdateInsertForCoordActionStatusJPAExecutor;
 import org.apache.oozie.executor.jpa.CoordActionGetForExternalIdJPAExecutor;
 import org.apache.oozie.executor.jpa.JPAExecutorException;
-import org.apache.oozie.service.JPAService;
-import org.apache.oozie.service.Services;
-import org.apache.oozie.util.LogUtils;
-import org.apache.oozie.util.db.SLADbOperations;
 
 public class CoordActionUpdateXCommand extends CoordinatorXCommand<Void> {
     private WorkflowJobBean workflow;
@@ -97,6 +97,12 @@ public class CoordActionUpdateXCommand extends CoordinatorXCommand<Void> {
                 coordAction.setLastModifiedTime(new Date());
                 updateList.add(coordAction);
                 jpaService.execute(new BulkUpdateInsertForCoordActionStatusJPAExecutor(updateList, null));
+                // TODO - Uncomment this when bottom up rerun can change terminal state
+                /* CoordinatorJobBean coordJob = jpaService.execute(new CoordJobGetJPAExecutor(coordAction.getJobId()));
+                if (!coordJob.isPending()) {
+                    coordJob.setPending();
+                    jpaService.execute(new CoordJobUpdateJPAExecutor(coordJob));
+                }*/
                 return null;
             }
 
@@ -105,6 +111,13 @@ public class CoordActionUpdateXCommand extends CoordinatorXCommand<Void> {
 
             coordAction.setLastModifiedTime(new Date());
             updateList.add(coordAction);
+            // TODO - Uncomment this when bottom up rerun can change terminal state
+            /*CoordinatorJobBean coordJob = jpaService.execute(new CoordJobGetJPAExecutor(coordAction.getJobId()));
+            if (!coordJob.isPending()) {
+                coordJob.setPending();
+                jpaService.execute(new CoordJobUpdateJPAExecutor(coordJob));
+                LOG.info("Updating Coordinator job "+ coordJob.getId() + "pending to true");
+            }*/
             if (slaStatus != null) {
                 SLAEventBean slaEvent = SLADbOperations.createStatusEvent(coordAction.getSlaXml(), coordAction.getId(), slaStatus,
                         SlaAppType.COORDINATOR_ACTION, LOG);

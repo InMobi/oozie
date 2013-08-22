@@ -38,8 +38,12 @@ import java.io.StringWriter;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Service that provides application workflow definition reading from the path and creation of the proto configuration.
@@ -56,8 +60,13 @@ public abstract class WorkflowAppService implements Service {
 
     public static final String CONFG_MAX_WF_LENGTH = CONF_PREFIX + "WorkflowDefinitionMaxLength";
 
+    public static final String OOZIE_SUBWORKFLOW_CLASSPATH_INHERITANCE = "oozie.subworkflow.classpath.inheritance";
+
+    public static final String OOZIE_WF_SUBWORKFLOW_CLASSPATH_INHERITANCE = "oozie.wf.subworkflow.classpath.inheritance";
+
     private Path systemLibPath;
     private long maxWFLength;
+    private boolean oozieSubWfCPInheritance;
 
     /**
      * Initialize the workflow application service.
@@ -73,6 +82,8 @@ public abstract class WorkflowAppService implements Service {
         }
 
         maxWFLength = conf.getInt(CONFG_MAX_WF_LENGTH, 100000);
+
+        oozieSubWfCPInheritance = conf.getBoolean(OOZIE_SUBWORKFLOW_CLASSPATH_INHERITANCE, true);
     }
 
     /**
@@ -165,11 +176,11 @@ public abstract class WorkflowAppService implements Service {
 
             FileSystem fs = has.createFileSystem(user, uri, conf);
 
-            Path appPath = new Path(uri.getPath());
+            Path appPath = new Path(uri);
             XLog.getLog(getClass()).debug("jobConf.libPath = " + jobConf.get(OozieClient.LIBPATH));
             XLog.getLog(getClass()).debug("jobConf.appPath = " + appPath);
 
-            List<String> filePaths;
+            Collection<String> filePaths;
             if (isWorkflowJob) {
                 // app path could be a directory
                 Path path = new Path(uri.getPath());
@@ -180,7 +191,7 @@ public abstract class WorkflowAppService implements Service {
                 }
             }
             else {
-                filePaths = new ArrayList<String>();
+                filePaths = new LinkedHashSet<String>();
             }
 
             String[] libPaths = jobConf.getStrings(OozieClient.LIBPATH);
@@ -188,9 +199,33 @@ public abstract class WorkflowAppService implements Service {
                 for (int i = 0; i < libPaths.length; i++) {
                     if (libPaths[i].trim().length() > 0) {
                         Path libPath = new Path(libPaths[i].trim());
-                        List<String> libFilePaths = getLibFiles(fs, libPath);
+                        Collection<String> libFilePaths = getLibFiles(fs, libPath);
                         filePaths.addAll(libFilePaths);
                     }
+                }
+            }
+
+            // Check if a subworkflow should inherit the libs from the parent WF
+            // OOZIE_WF_SUBWORKFLOW_CLASSPATH_INHERITANCE has priority over OOZIE_SUBWORKFLOW_CLASSPATH_INHERITANCE from oozie-site
+            // If OOZIE_WF_SUBWORKFLOW_CLASSPATH_INHERITANCE isn't specified, we use OOZIE_SUBWORKFLOW_CLASSPATH_INHERITANCE
+            if (jobConf.getBoolean(OOZIE_WF_SUBWORKFLOW_CLASSPATH_INHERITANCE, oozieSubWfCPInheritance)) {
+                // Keep any libs from a parent workflow that might already be in APP_LIB_PATH_LIST and also remove duplicates
+                String[] parentFilePaths = jobConf.getStrings(APP_LIB_PATH_LIST);
+                if (parentFilePaths != null && parentFilePaths.length > 0) {
+                    String[] filePathsNames = filePaths.toArray(new String[filePaths.size()]);
+                    for (int i = 0; i < filePathsNames.length; i++) {
+                        Path p = new Path(filePathsNames[i]);
+                        filePathsNames[i] = p.getName();
+                    }
+                    Arrays.sort(filePathsNames);
+                    List<String> nonDuplicateParentFilePaths = new ArrayList<String>();
+                    for (String parentFilePath : parentFilePaths) {
+                        Path p = new Path(parentFilePath);
+                        if (Arrays.binarySearch(filePathsNames, p.getName()) < 0) {
+                            nonDuplicateParentFilePaths.add(parentFilePath);
+                        }
+                    }
+                    filePaths.addAll(nonDuplicateParentFilePaths);
                 }
             }
 
@@ -201,12 +236,10 @@ public abstract class WorkflowAppService implements Service {
                 if (entry.getKey().startsWith("oozie.")) {
                     String name = entry.getKey();
                     String value = entry.getValue();
-                    // Append application lib jars of both parent and child in
-                    // subworkflow to APP_LIB_PATH_LIST
-                    if ((conf.get(name) != null) && name.equals(APP_LIB_PATH_LIST)) {
-                        value = value + "," + conf.get(name);
+                    // if property already exists, should not overwrite
+                    if(conf.get(name) == null) {
+                        conf.set(name, value);
                     }
-                    conf.set(name, value);
                 }
             }
             XConfiguration retConf = new XConfiguration();
@@ -241,10 +274,11 @@ public abstract class WorkflowAppService implements Service {
     /**
      * Parse workflow definition.
      * @param wfXml workflow.
+     * @param jobConf job configuration
      * @return workflow application.
      * @throws WorkflowException thrown if the workflow application could not be parsed.
      */
-    public abstract WorkflowApp parseDef(String wfXml) throws WorkflowException;
+    public abstract WorkflowApp parseDef(String wfXml, Configuration jobConf) throws WorkflowException;
 
     /**
      * Get all library paths.
@@ -254,17 +288,17 @@ public abstract class WorkflowAppService implements Service {
      * @return list of paths.
      * @throws IOException thrown if the lib paths could not be obtained.
      */
-    private List<String> getLibFiles(FileSystem fs, Path libPath) throws IOException {
-        List<String> libPaths = new ArrayList<String>();
+    private Collection<String> getLibFiles(FileSystem fs, Path libPath) throws IOException {
+        Set<String> libPaths = new LinkedHashSet<String>();
         if (fs.exists(libPath)) {
             FileStatus[] files = fs.listStatus(libPath, new NoPathFilter());
 
             for (FileStatus file : files) {
-                libPaths.add(file.getPath().toUri().getPath().trim());
+                libPaths.add(file.getPath().toUri().toString());
             }
         }
         else {
-            XLog.getLog(getClass()).warn("libpath [{0}] does not exists", libPath);
+            XLog.getLog(getClass()).warn("libpath [{0}] does not exist", libPath);
         }
         return libPaths;
     }

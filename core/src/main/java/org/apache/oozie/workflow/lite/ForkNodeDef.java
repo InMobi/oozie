@@ -20,16 +20,17 @@ package org.apache.oozie.workflow.lite;
 import java.util.ArrayList;
 import java.util.List;
 
-//TODO javadoc
-public class ForkNodeDef extends NodeDef {
-
-    public static final String FORK_COUNT_PREFIX = "workflow.fork.";
+/**
+ * Node definition for FORK control node.
+ */
+public class ForkNodeDef extends ControlNodeDef {
 
     ForkNodeDef() {
     }
 
-    public ForkNodeDef(String name, List<String> transitions) {
-        super(name, null, ForkNodeHandler.class, transitions);
+    public ForkNodeDef(String name, Class<? extends ControlNodeHandler> klass,
+                       List<String> transitions) {
+        super(name, "", klass, transitions);
     }
 
     public static class ForkNodeHandler extends NodeHandler {
@@ -41,7 +42,7 @@ public class ForkNodeDef extends NodeDef {
         // the return list contains (parentExecutionPath/transition#transition)+
         public List<String> multiExit(Context context) {
             List<String> transitions = context.getNodeDef().getTransitions();
-            context.setVar(FORK_COUNT_PREFIX + context.getExecutionPath(), "" + transitions.size());
+            context.setVar(ControlNodeHandler.FORK_COUNT_PREFIX + context.getExecutionPath(), "" + transitions.size());
 
             List<String> fullTransitions = new ArrayList<String>(transitions.size());
 

@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,6 +21,7 @@ import org.apache.oozie.test.XTestCase;
 import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.io.Text;
 import org.apache.oozie.util.IOUtils;
 
 import java.io.File;
@@ -28,6 +29,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.oozie.ErrorCode;
 
 public class TestHadoopAccessorService extends XTestCase {
 
@@ -111,6 +114,55 @@ public class TestHadoopAccessorService extends XTestCase {
         }
         catch (Throwable ex) {
         }
+    }
+
+    public void testGetMRDelegationTokenRenewer() throws Exception {
+        JobConf jobConf = new JobConf();
+        assertEquals(new Text("oozie mr token"), HadoopAccessorService.getMRTokenRenewerInternal(jobConf));
+        jobConf.set("mapred.job.tracker", "localhost:50300");
+        jobConf.set("mapreduce.jobtracker.kerberos.principal", "mapred/_HOST@KDC.DOMAIN.COM");
+        assertEquals(new Text("mapred/localhost@KDC.DOMAIN.COM"),
+                HadoopAccessorService.getMRTokenRenewerInternal(jobConf));
+        jobConf = new JobConf();
+        jobConf.set("mapreduce.jobtracker.address", "127.0.0.1:50300");
+        jobConf.set("mapreduce.jobtracker.kerberos.principal", "mapred/_HOST@KDC.DOMAIN.COM");
+        assertEquals(new Text("mapred/localhost@KDC.DOMAIN.COM"),
+                HadoopAccessorService.getMRTokenRenewerInternal(jobConf));
+        jobConf = new JobConf();
+        jobConf.set("yarn.resourcemanager.address", "localhost:8032");
+        jobConf.set("yarn.resourcemanager.principal", "rm/server.com@KDC.DOMAIN.COM");
+        assertEquals(new Text("rm/server.com@KDC.DOMAIN.COM"),
+                HadoopAccessorService.getMRTokenRenewerInternal(jobConf));
+    }
+
+    public void testCheckSupportedFilesystem() throws Exception {
+        Configuration hConf = Services.get().getConf();
+
+        // Only allow hdfs and foo schemes
+        HadoopAccessorService has = new HadoopAccessorService();
+        hConf.set("oozie.service.HadoopAccessorService.supported.filesystems", "hdfs,foo");
+        has.init(hConf);
+        has.checkSupportedFilesystem(new URI("hdfs://localhost:1234/blah"));
+        has.checkSupportedFilesystem(new URI("foo://localhost:1234/blah"));
+        try {
+            has.checkSupportedFilesystem(new URI("file://localhost:1234/blah"));
+            fail("Should have thrown an exception because 'file' scheme isn't allowed");
+        }
+        catch (HadoopAccessorException hae) {
+            assertEquals(ErrorCode.E0904, hae.getErrorCode());
+        }
+        // giving no scheme should skip the check
+        has.checkSupportedFilesystem(new URI("/blah"));
+
+        // allow all schemes
+        has = new HadoopAccessorService();
+        hConf.set("oozie.service.HadoopAccessorService.supported.filesystems", "*");
+        has.init(hConf);
+        has.checkSupportedFilesystem(new URI("hdfs://localhost:1234/blah"));
+        has.checkSupportedFilesystem(new URI("foo://localhost:1234/blah"));
+        has.checkSupportedFilesystem(new URI("file://localhost:1234/blah"));
+        // giving no scheme should skip the check
+        has.checkSupportedFilesystem(new URI("/blah"));
     }
 
 }

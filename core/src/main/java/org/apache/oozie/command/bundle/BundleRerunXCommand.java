@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -138,8 +138,8 @@ public class BundleRerunXCommand extends RerunTransitionXCommand<Void> {
                         rerunDateScope = dateScope;
                     }
                     else {
-                        String coordStart = DateUtils.convertDateToString(coordJob.getStartTime());
-                        String coordEnd = DateUtils.convertDateToString(coordJob.getEndTime());
+                        String coordStart = DateUtils.formatDateOozieTZ(coordJob.getStartTime());
+                        String coordEnd = DateUtils.formatDateOozieTZ(coordJob.getEndTime());
                         rerunDateScope = coordStart + "::" + coordEnd;
                     }
                     LOG.debug("Queuing rerun range [" + rerunDateScope + "] for coord id " + coordId + " of bundle "
@@ -205,33 +205,35 @@ public class BundleRerunXCommand extends RerunTransitionXCommand<Void> {
      */
     @Override
     public void updateJob() {
-        // rerun a paused bundle job will keep job status at paused and pending
-        // at previous pending
-        if (getPrevStatus() != null && getPrevStatus().equals(Job.Status.PAUSED)) {
-            bundleJob.setStatus(Job.Status.PAUSED);
-            if (prevPending) {
-                bundleJob.setPending();
-            } else {
-                bundleJob.resetPending();
+        // rerun a paused bundle job will keep job status at paused and pending at previous pending
+        if (getPrevStatus() != null) {
+            Job.Status bundleJobStatus = getPrevStatus();
+            if (bundleJobStatus.equals(Job.Status.PAUSED) || bundleJobStatus.equals(Job.Status.PAUSEDWITHERROR)) {
+                bundleJob.setStatus(bundleJobStatus);
+                if (prevPending) {
+                    bundleJob.setPending();
+                }
+                else {
+                    bundleJob.resetPending();
+                }
             }
         }
         updateList.add(bundleJob);
     }
 
-    /*
-     * (non-Javadoc)
-     * 
+    /* (non-Javadoc)
      * @see org.apache.oozie.command.RerunTransitionXCommand#performWrites()
      */
     @Override
     public void performWrites() throws CommandException {
         try {
             jpaService.execute(new BulkUpdateInsertJPAExecutor(updateList, null));
-        } catch (JPAExecutorException e) {
+        }
+        catch (JPAExecutorException e) {
             throw new CommandException(e);
         }
     }
-    
+
     /* (non-Javadoc)
      * @see org.apache.oozie.command.XCommand#getEntityKey()
      */

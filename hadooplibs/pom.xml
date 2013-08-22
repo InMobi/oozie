@@ -22,24 +22,22 @@
     <parent>
         <groupId>org.apache.oozie</groupId>
         <artifactId>oozie-main</artifactId>
-        <version>3.2.3</version>
+        <version>3.3.2.1-SNAPSHOT</version>
     </parent>
     <groupId>org.apache.oozie</groupId>
     <artifactId>oozie-hadooplibs</artifactId>
-    <version>3.2.3</version>
+    <version>3.3.2.1-SNAPSHOT</version>
     <description>Apache Oozie Hadoop Libs</description>
     <name>Apache Oozie Hadoop Libs</name>
     <packaging>pom</packaging>
 
     <modules>
-        <module>hadoop-1_0_1</module>
-        <module>hadoop-test-1_0_1</module>
-        <module>hadoop-0_23_1</module>
-        <module>hadoop-test-0_23_1</module>
-        <module>hadoop-0_23_2</module>
-        <module>hadoop-test-0_23_2</module>
-        <module>hadoop-0_24_0</module>
-        <module>hadoop-test-0_24_0</module>
+        <module>hadoop-1</module>
+        <module>hadoop-distcp-1</module>
+        <module>hadoop-test-1</module>
+        <module>hadoop-2</module>
+        <module>hadoop-test-2</module>
+        <module>hadoop-distcp-2</module>
     </modules>
 
     <build>
@@ -64,5 +62,18 @@
         </plugins>
     </build>
 
+    <profiles>
+        <profile>
+            <id>hadoop-3</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <modules>
+                <module>hadoop-3</module>
+                <module>hadoop-test-3</module>
+                <module>hadoop-distcp-3</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>
 

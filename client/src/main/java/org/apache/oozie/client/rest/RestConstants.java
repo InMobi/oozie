@@ -38,6 +38,8 @@ public interface RestConstants {
 
     public static final String TEXT_CONTENT_TYPE = "text/plain";
 
+    public static final String PNG_IMAGE_CONTENT_TYPE = "image/png";
+
     public static final String ACTION_PARAM = "action";
 
     public static final String OFFSET_PARAM = "offset";
@@ -77,6 +79,10 @@ public interface RestConstants {
 
     public static final String JOB_SHOW_DEFINITION = "definition";
 
+    public static final String JOB_SHOW_GRAPH = "graph";
+
+    public static final String JOB_SHOW_KILL_PARAM = "show-kill";
+
     public static final String JOB_BUNDLE_RERUN_COORD_SCOPE_PARAM = "coord-scope";
 
     public static final String JOB_BUNDLE_RERUN_DATE_SCOPE_PARAM = "date-scope";
@@ -102,6 +108,8 @@ public interface RestConstants {
     public static final String JOB_LOG_TYPE_PARAM = "type";
 
     public static final String JOBS_FILTER_PARAM = "filter";
+
+    public static final String JOBS_BULK_PARAM = "bulk";
 
     public static final String JOBS_EXTERNAL_ID_PARAM = "external-id";
 
@@ -138,4 +146,8 @@ public interface RestConstants {
     public static final String SLA = "sla";
 
     public static final String DO_AS_PARAM = "doAs";
+    
+    public static final String TIME_ZONE_PARAM = "timezone";
+    
+    public static final String ADMIN_TIME_ZONES_RESOURCE = "available-timezones";
 }

@@ -20,9 +20,9 @@ package org.apache.oozie.action.hadoop;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.Counters;
 import org.apache.hadoop.mapred.JobClient;
@@ -31,18 +31,20 @@ import org.apache.hadoop.mapred.JobID;
 import org.apache.hadoop.mapred.RunningJob;
 import org.apache.oozie.action.ActionExecutorException;
 import org.apache.oozie.client.WorkflowAction;
+import org.apache.oozie.service.Services;
 import org.apache.oozie.util.XConfiguration;
 import org.apache.oozie.util.XLog;
 import org.apache.oozie.util.XmlUtils;
 import org.jdom.Element;
 import org.jdom.Namespace;
 import org.json.simple.JSONObject;
-import org.mortbay.util.ajax.JSON;
 
 public class MapReduceActionExecutor extends JavaActionExecutor {
 
     public static final String OOZIE_ACTION_EXTERNAL_STATS_WRITE = "oozie.action.external.stats.write";
     public static final String HADOOP_COUNTERS = "hadoop.counters";
+    public static final String OOZIE_MAPREDUCE_UBER_JAR = "oozie.mapreduce.uber.jar";
+    public static final String OOZIE_MAPREDUCE_UBER_JAR_ENABLE = "oozie.action.mapreduce.uber.jar.enable";
     private XLog log = XLog.getLog(getClass());
 
     public MapReduceActionExecutor() {
@@ -88,6 +90,7 @@ public class MapReduceActionExecutor extends JavaActionExecutor {
     @SuppressWarnings("unchecked")
     Configuration setupActionConf(Configuration actionConf, Context context, Element actionXml, Path appPath)
             throws ActionExecutorException {
+        boolean regularMR = false;
         Namespace ns = actionXml.getNamespace();
         if (actionXml.getChild("streaming", ns) != null) {
             Element streamingXml = actionXml.getChild("streaming", ns);
@@ -117,8 +120,47 @@ public class MapReduceActionExecutor extends JavaActionExecutor {
                 String program = pipesXml.getChildTextTrim("program", ns);
                 PipesMain.setPipes(actionConf, map, reduce, inputFormat, partitioner, writer, program, appPath);
             }
+            else {
+                regularMR = true;
+            }
         }
         actionConf = super.setupActionConf(actionConf, context, actionXml, appPath);
+
+        // For "regular" (not streaming or pipes) MR jobs
+        if (regularMR) {
+            // Resolve uber jar path (has to be done after super because oozie.mapreduce.uber.jar is under <configuration>)
+            String uberJar = actionConf.get(OOZIE_MAPREDUCE_UBER_JAR);
+            if (uberJar != null) {
+                if (!Services.get().getConf().getBoolean(OOZIE_MAPREDUCE_UBER_JAR_ENABLE, false)) {
+                    throw new ActionExecutorException(ActionExecutorException.ErrorType.ERROR, "MR003",
+                            "{0} property is not allowed.  Set {1} to true in oozie-site to enable.", OOZIE_MAPREDUCE_UBER_JAR,
+                            OOZIE_MAPREDUCE_UBER_JAR_ENABLE);
+                }
+                String nameNode = actionXml.getChildTextTrim("name-node", ns);
+                if (nameNode != null) {
+                    Path uberJarPath = new Path(uberJar);
+                    if (uberJarPath.toUri().getScheme() == null || uberJarPath.toUri().getAuthority() == null) {
+                        if (uberJarPath.isAbsolute()) {     // absolute path without namenode --> prepend namenode
+                            Path nameNodePath = new Path(nameNode);
+                            String nameNodeSchemeAuthority = nameNodePath.toUri().getScheme()
+                                    + "://" + nameNodePath.toUri().getAuthority();
+                            actionConf.set(OOZIE_MAPREDUCE_UBER_JAR, new Path(nameNodeSchemeAuthority + uberJarPath).toString());
+                        }
+                        else {                              // relative path --> prepend app path
+                            actionConf.set(OOZIE_MAPREDUCE_UBER_JAR, new Path(appPath, uberJarPath).toString());
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            if (actionConf.get(OOZIE_MAPREDUCE_UBER_JAR) != null) {
+                log.warn("The " + OOZIE_MAPREDUCE_UBER_JAR + " property is only applicable for MapReduce (not streaming nor pipes)"
+                        + " workflows, ignoring");
+                actionConf.set(OOZIE_MAPREDUCE_UBER_JAR, "");
+            }
+        }
+
         return actionConf;
     }
 
@@ -139,12 +181,6 @@ public class MapReduceActionExecutor extends JavaActionExecutor {
                             .getExternalId(), action.getId());
                 }
 
-                // TODO this has to be done in a better way
-                if (!runningJob.getJobName().startsWith("oozie:action:")) {
-                    throw new ActionExecutorException(ActionExecutorException.ErrorType.FAILED, "MR001",
-                                                      "ID swap should have happened in launcher job [{0}]", action.getExternalId());
-                }
-
                 Counters counters = runningJob.getCounters();
                 if (counters != null) {
                     ActionStats stats = new MRStats(counters);
@@ -159,7 +195,7 @@ public class MapReduceActionExecutor extends JavaActionExecutor {
                             && (statsJsonString.getBytes().length <= getMaxExternalStatsSize())) {
                         context.setExecutionStats(statsJsonString);
                         log.debug(
-                                "Printing stats for Map-Reduce action as a JSON string : [{0}]" + statsJsonString);
+                                "Printing stats for Map-Reduce action as a JSON string : [{0}]", statsJsonString);
                     }
                 }
                 else {
@@ -227,16 +263,33 @@ public class MapReduceActionExecutor extends JavaActionExecutor {
     }
 
     /**
-     * Return the sharelib postfix for the action.
+     * Return the sharelib name for the action.
      *
-     * @param context executor context.
-     * @param actionXml the action XML.
-     * @return the action sharelib post fix, this implementation returns <code>NULL</code>
-     * or <code>streaming</code> if the mapreduce action is streaming.
+     * @return returns <code>streaming</code> if mapreduce-streaming action, <code>NULL</code> otherwise.
+     * @param actionXml
      */
-    protected String getShareLibPostFix(Context context, Element actionXml) {
+    @Override
+    protected String getDefaultShareLibName(Element actionXml) {
         Namespace ns = actionXml.getNamespace();
         return (actionXml.getChild("streaming", ns) != null) ? "mapreduce-streaming" : null;
     }
 
+    @Override
+    JobConf createLauncherConf(FileSystem actionFs, Context context, WorkflowAction action, Element actionXml,
+            Configuration actionConf) throws ActionExecutorException {
+        // If the user is using a regular MapReduce job and specified an uber jar, we need to also set it for the launcher;
+        // so we override createLauncherConf to call super and then to set the uber jar if specified. At this point, checking that
+        // uber jars are enabled and resolving the uber jar path is already done by setupActionConf() when it parsed the actionConf
+        // argument and we can just look up the uber jar in the actionConf argument.
+        JobConf launcherJobConf = super.createLauncherConf(actionFs, context, action, actionXml, actionConf);
+        Namespace ns = actionXml.getNamespace();
+        if (actionXml.getChild("streaming", ns) == null && actionXml.getChild("pipes", ns) == null) {
+            // Set for uber jar
+            String uberJar = actionConf.get(MapReduceActionExecutor.OOZIE_MAPREDUCE_UBER_JAR);
+            if (uberJar != null && uberJar.trim().length() > 0) {
+                launcherJobConf.setJar(uberJar);
+            }
+        }
+        return launcherJobConf;
+    }
 }

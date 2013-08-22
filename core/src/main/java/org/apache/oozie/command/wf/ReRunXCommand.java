@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -113,6 +113,7 @@ public class ReRunXCommand extends WorkflowXCommand<Void> {
         LogUtils.setLogInfo(wfBean, logInfo);
         WorkflowInstance oldWfInstance = this.wfBean.getWorkflowInstance();
         WorkflowInstance newWfInstance;
+        String appPath = null;
 
         WorkflowAppService wps = Services.get().get(WorkflowAppService.class);
         try {
@@ -121,7 +122,8 @@ public class ReRunXCommand extends WorkflowXCommand<Void> {
             XConfiguration protoActionConf = wps.createProtoActionConf(conf, authToken, true);
             WorkflowLib workflowLib = Services.get().get(WorkflowStoreService.class).getWorkflowLibWithNoDB();
 
-            URI uri = new URI(conf.get(OozieClient.APP_PATH));
+            appPath = conf.get(OozieClient.APP_PATH);
+            URI uri = new URI(appPath);
             HadoopAccessorService has = Services.get().get(HadoopAccessorService.class);
             Configuration fsConf = has.createJobConf(uri.getAuthority());
             FileSystem fs = has.createFileSystem(wfBean.getUser(), uri, fsConf);
@@ -161,13 +163,13 @@ public class ReRunXCommand extends WorkflowXCommand<Void> {
             throw new CommandException(ex);
         }
         catch (IOException ex) {
-            throw new CommandException(ErrorCode.E0803, ex);
+            throw new CommandException(ErrorCode.E0803, ex.getMessage(), ex);
         }
         catch (HadoopAccessorException ex) {
             throw new CommandException(ex);
         }
         catch (URISyntaxException ex) {
-            throw new CommandException(ErrorCode.E0711, ex.getMessage(), ex);
+            throw new CommandException(ErrorCode.E0711, appPath, ex.getMessage(), ex);
         }
 
         for (int i = 0; i < actions.size(); i++) {
@@ -249,7 +251,7 @@ public class ReRunXCommand extends WorkflowXCommand<Void> {
             }
         }
         catch (Exception ex) {
-            throw new CommandException(ErrorCode.E0603, ex);
+            throw new CommandException(ErrorCode.E0603, ex.getMessage(), ex);
         }
     }
 

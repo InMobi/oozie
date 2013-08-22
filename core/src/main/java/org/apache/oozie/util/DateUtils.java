@@ -25,115 +25,192 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
-import java.util.Locale;
 import java.util.TimeZone;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.oozie.coord.TimeUnit;
 
+/**
+ * Date utility classes to parse and format datetimes in Oozie expected datetime formats.
+ */
 public class DateUtils {
 
-    private static final String[] W3CDATETIME_MASKS = {"yyyy-MM-dd'T'HH:mmz"};
+    private static final Pattern GMT_OFFSET_COLON_PATTERN = Pattern.compile("^GMT(\\-|\\+)(\\d{2})(\\d{2})$");
+
+    public static final TimeZone UTC = getTimeZone("UTC");
+
+    public static final String ISO8601_UTC_MASK = "yyyy-MM-dd'T'HH:mm'Z'";
+    private static final String ISO8601_TZ_MASK_WITHOUT_OFFSET = "yyyy-MM-dd'T'HH:mm";
+
+    private static String ACTIVE_MASK = ISO8601_UTC_MASK;
+    private static TimeZone ACTIVE_TIMEZONE = UTC;
+
+    public static final String OOZIE_PROCESSING_TIMEZONE_KEY = "oozie.processing.timezone";
+
+    public static final String OOZIE_PROCESSING_TIMEZONE_DEFAULT = "UTC";
+
+    private static boolean OOZIE_IN_UTC = true;
+
+    private static final Pattern VALID_TIMEZONE_PATTERN = Pattern.compile("^UTC$|^GMT(\\+|\\-)\\d{4}$");
 
     /**
-     * Parses a Date out of a String with a date in W3C date-time format.
+     * Configures the Datetime parsing with Oozie processing timezone.
      * <p/>
-     * It parsers the following formats:
-     * <ul>
-     * <li>"yyyy-MM-dd'T'HH:mm:ssz"</li>
-     * <li>"yyyy-MM-dd'T'HH:mmz"</li>
-     * <li>"yyyy-MM-dd"</li>
-     * <li>"yyyy-MM"</li>
-     * <li>"yyyy"</li>
-     * </ul>
-     * <p/>
-     * Refer to the java.text.SimpleDateFormat javadocs for details on the
-     * format of each element.
-     * <p/>
+     * The {@link #OOZIE_PROCESSING_TIMEZONE_KEY} property is read and set as the Oozie processing timezone.
+     * Valid values for this property are <code>UTC</code> and <code>GMT(+/-)####</code>
      *
-     * @param sDate string to parse for a date.
-     * @return the Date represented by the given W3C date-time string. It
-     * returns <b>null</b> if it was not possible to parse the given
-     * string into a Date.
+     * @param conf Oozie server configuration.
      */
-    /*
-     * public static Date parseW3CDateTime(String sDate) { // if sDate has time
-     * on it, it injects 'GTM' before de TZ displacement to // allow the
-     * SimpleDateFormat parser to parse it properly int tIndex =
-     * sDate.indexOf("T"); if (tIndex > -1) { if (sDate.endsWith("Z")) { sDate =
-     * sDate.substring(0, sDate.length() - 1) + "+00:00"; } int tzdIndex =
-     * sDate.indexOf("+", tIndex); if (tzdIndex == -1) { tzdIndex =
-     * sDate.indexOf("-", tIndex); } if (tzdIndex > -1) { String pre =
-     * sDate.substring(0, tzdIndex); int secFraction = pre.indexOf(","); if
-     * (secFraction > -1) { pre = pre.substring(0, secFraction); } String post =
-     * sDate.substring(tzdIndex); sDate = pre + "GMT" + post; } } else { sDate
-     * += "T00:00GMT"; } return parseUsingMask(W3CDATETIME_MASKS, sDate); }
-     */
-    /**
-     * Parses a Date out of a string using an array of masks. <p/> It uses the masks in order until one of them succedes
-     * or all fail. <p/>
-     *
-     * @param masks array of masks to use for parsing the string
-     * @param sDate string to parse for a date.
-     * @return the Date represented by the given string using one of the given masks. It returns <b>null</b> if it was
-     *         not possible to parse the the string with any of the masks.
-     */
-    private static Date parseUsingMask(String[] masks, String sDate) {
-        sDate = (sDate != null) ? sDate.trim() : null;
-        ParsePosition pp;
-        Date d = null;
-        if (sDate != null) {
-            for (int i = 0; d == null && i < masks.length; i++) {
-                DateFormat df = new SimpleDateFormat(masks[i], Locale.US);
-                df.setLenient(true);
-                pp = new ParsePosition(0);
-                d = df.parse(sDate, pp);
-                if (pp.getIndex() != sDate.length()) {
-                    d = null;
-                }
-            }
+    public static void setConf(Configuration conf) {
+        String tz = conf.get(OOZIE_PROCESSING_TIMEZONE_KEY, OOZIE_PROCESSING_TIMEZONE_DEFAULT);
+        if (!VALID_TIMEZONE_PATTERN.matcher(tz).matches()) {
+            throw new RuntimeException("Invalid Oozie timezone, it must be 'UTC' or 'GMT(+/-)####");
         }
-        return d;
+        ACTIVE_TIMEZONE = TimeZone.getTimeZone(tz);
+        OOZIE_IN_UTC = ACTIVE_TIMEZONE.equals(UTC);
+        ACTIVE_MASK = (OOZIE_IN_UTC) ? ISO8601_UTC_MASK : ISO8601_TZ_MASK_WITHOUT_OFFSET + tz.substring(3);
     }
 
-    private static final TimeZone UTC = getTimeZone("UTC");
+    /**
+     * Returns Oozie processing timezone.
+     *
+     * @return Oozie processing timezone. The returned timezone is <code>UTC</code> or a <code>GMT(+/-)####</code>
+     * timezone.
+     */
+    public static TimeZone getOozieProcessingTimeZone() {
+        return ACTIVE_TIMEZONE;
+    }
 
-    private static DateFormat getISO8601DateFormat() {
-        DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
-        dateFormat.setTimeZone(UTC);
+    /**
+     * Returns Oozie processing datetime mask.
+     * <p/>
+     * This mask is an ISO8601 datetime mask for the Oozie processing timezone.
+     *
+     * @return  Oozie processing datetime mask.
+     */
+    public static String getOozieTimeMask() {
+        return ACTIVE_MASK;
+    }
+
+    private static DateFormat getISO8601DateFormat(TimeZone tz, String mask) {
+        DateFormat dateFormat = new SimpleDateFormat(mask);
+        // Stricter parsing to prevent dates such as 2011-12-50T01:00Z (December 50th) from matching
+        dateFormat.setLenient(false);
+        dateFormat.setTimeZone(tz);
         return dateFormat;
     }
 
     private static DateFormat getSpecificDateFormat(String format) {
         DateFormat dateFormat = new SimpleDateFormat(format);
-        dateFormat.setTimeZone(UTC);
+        dateFormat.setTimeZone(ACTIVE_TIMEZONE);
         return dateFormat;
     }
 
+    /**
+     * {@link TimeZone#getTimeZone(java.lang.String)} takes the timezone ID as an argument; for invalid IDs it returns the
+     * <code>GMT</code> TimeZone.  A timezone ID formatted like <code>GMT-####</code> is not a valid ID, however, it will actually
+     * map this to the <code>GMT-##:##</code> TimeZone, instead of returning the <code>GMT</code> TimeZone.  We check (later)
+     * check that a timezone ID is valid by calling {@link TimeZone#getTimeZone(java.lang.String)} and seeing if the returned
+     * TimeZone ID is equal to the original; because we want to allow <code>GMT-####</code>, while still disallowing actual
+     * invalid IDs, we have to manually replace <code>GMT-####</code> with <code>GMT-##:##</code> first.
+     *
+     * @param tzId The timezone ID
+     * @return If tzId matches <code>GMT-####</code>, then we return <code>GMT-##:##</code>; otherwise, we return tzId unaltered
+     */
+    private static String handleGMTOffsetTZNames(String tzId) {
+        Matcher m = GMT_OFFSET_COLON_PATTERN.matcher(tzId);
+        if (m.matches() && m.groupCount() == 3) {
+            tzId = "GMT" + m.group(1) + m.group(2) + ":" + m.group(3);
+        }
+        return tzId;
+    }
+
+    /**
+     * Returns the {@link TimeZone} for the given timezone ID.
+     *
+     * @param tzId timezone ID.
+     * @return  the {@link TimeZone} for the given timezone ID.
+     */
     public static TimeZone getTimeZone(String tzId) {
         if (tzId == null) {
             throw new IllegalArgumentException("Invalid TimeZone: " + tzId);
         }
+        tzId = handleGMTOffsetTZNames(tzId);    // account for GMT-####
         TimeZone tz = TimeZone.getTimeZone(tzId);
+        // If these are not equal, it means that the tzId is not valid (invalid tzId's return GMT)
         if (!tz.getID().equals(tzId)) {
             throw new IllegalArgumentException("Invalid TimeZone: " + tzId);
         }
         return tz;
     }
 
+    /**
+     * Parses a datetime in ISO8601 format in UTC timezone
+     *
+     * @param s string with the datetime to parse.
+     * @return the corresponding {@link Date} instance for the parsed date.
+     * @throws ParseException thrown if the given string was not an ISO8601 UTC value.
+     */
     public static Date parseDateUTC(String s) throws ParseException {
-        return getISO8601DateFormat().parse(s);
+        return getISO8601DateFormat(UTC, ISO8601_UTC_MASK).parse(s);
     }
 
-    public static String formatDateUTC(Date d) throws Exception {
-        return (d != null) ? getISO8601DateFormat().format(d) : "NULL";
+    /**
+     * Parses a datetime in ISO8601 format in the Oozie processing timezone.
+     *
+     * @param s string with the datetime to parse.
+     * @return the corresponding {@link Date} instance for the parsed date.
+     * @throws ParseException thrown if the given string was not an ISO8601 value for the Oozie processing timezon.
+     */
+    public static Date parseDateOozieTZ(String s) throws ParseException {
+        s = s.trim();
+        ParsePosition pos = new ParsePosition(0);
+        Date d = getISO8601DateFormat(ACTIVE_TIMEZONE, ACTIVE_MASK).parse(s, pos);
+        if (d == null) {
+            throw new ParseException("Could not parse [" + s + "] using [" + ACTIVE_MASK + "] mask",
+                                     pos.getErrorIndex());
+        }
+        if (d != null && s.length() > pos.getIndex()) {
+            throw new ParseException("Correct datetime string is followed by invalid characters: " + s, pos.getIndex());
+        }
+        return d;
     }
 
-    public static String formatDateCustom(Date d, String format) throws Exception {
+    /**
+     * Formats a {@link Date} as a string in ISO8601 format using Oozie processing timezone.
+     *
+     * @param d {@link Date} to format.
+     * @return the ISO8601 string for the given date, <code>NULL</code> if the {@link Date} instance was
+     * <code>NULL</code>
+     */
+    public static String formatDateOozieTZ(Date d) {
+        return (d != null) ? getISO8601DateFormat(ACTIVE_TIMEZONE, ACTIVE_MASK).format(d) : "NULL";
+    }
+
+    /**
+     * Formats a {@link Date} as a string using the specified format mask.
+     * <p/>
+     * The format mask must be a {@link SimpleDateFormat} valid format mask.
+     *
+     * @param d {@link Date} to format.
+     * @return the string for the given date using the specified format mask,
+     * <code>NULL</code> if the {@link Date} instance was <code>NULL</code>
+     */
+    public static String formatDateCustom(Date d, String format) {
         return (d != null) ? getSpecificDateFormat(format).format(d) : "NULL";
     }
 
-    public static String formatDateUTC(Calendar c) throws Exception {
-        return (c != null) ? formatDateUTC(c.getTime()) : "NULL";
+    /**
+     * Formats a {@link Calendar} as a string in ISO8601 format using Oozie processing timezone.
+     *
+     * @param c {@link Calendar} to format.
+     * @return the ISO8601 string for the given date, <code>NULL</code> if the {@link Calendar} instance was
+     * <code>NULL</code>
+     */
+    public static String formatDateOozieTZ(Calendar c) {
+        return (c != null) ? formatDateOozieTZ(c.getTime()) : "NULL";
     }
 
     /**
@@ -205,7 +282,7 @@ public class DateUtils {
      * @throws Exception
      */
     public static Calendar getCalendar(String dateString, TimeZone tz) throws Exception {
-        Date date = DateUtils.parseDateUTC(dateString);
+        Date date = DateUtils.parseDateOozieTZ(dateString);
         Calendar calDate = Calendar.getInstance();
         calDate.setTime(date);
         calDate.setTimeZone(tz);
@@ -219,7 +296,7 @@ public class DateUtils {
      * @throws Exception
      */
     public static Calendar getCalendar(String dateString) throws Exception {
-        return getCalendar(dateString, DateUtils.getTimeZone("UTC"));
+        return getCalendar(dateString, ACTIVE_TIMEZONE);
     }
 
     /**
@@ -247,31 +324,6 @@ public class DateUtils {
             return new Timestamp(d.getTime());
         }
         return null;
-    }
-
-    /**
-     * Return the UTC date and time in W3C format down to second
-     * (yyyy-MM-ddTHH:mmZ). i.e.: 1997-07-16T19:20:30Z
-     *
-     * @return the formatted time string.
-     */
-    public static String convertDateToString(Date date) {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
-        sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-        return sdf.format(date);
-    }
-
-    /**
-     * Return the UTC date and time in W3C format down to second
-     * (yyyy-MM-ddTHH:mmZ). i.e.: 1997-07-16T19:20Z The input date is a
-     * long (Unix Time Stamp)
-     *
-     * @return the formatted time string.
-     */
-    public static String convertDateToString(long timeStamp) {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
-        sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-        return sdf.format(new Date(timeStamp));
     }
 
 }

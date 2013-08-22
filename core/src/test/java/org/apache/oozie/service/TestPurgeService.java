@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -51,8 +51,6 @@ import org.apache.oozie.executor.jpa.JPAExecutorException;
 import org.apache.oozie.executor.jpa.WorkflowJobGetJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowJobUpdateJPAExecutor;
 import org.apache.oozie.service.PurgeService.PurgeRunnable;
-import org.apache.oozie.service.Services;
-import org.apache.oozie.service.ActionService;
 import org.apache.oozie.test.XDataTestCase;
 import org.apache.oozie.util.DateUtils;
 import org.apache.oozie.util.IOUtils;
@@ -63,12 +61,16 @@ import org.apache.oozie.util.XConfiguration;
  */
 public class TestPurgeService extends XDataTestCase {
     private Services services;
+    String[] excludedServices = { "org.apache.oozie.service.StatusTransitService",
+            "org.apache.oozie.service.PauseTransitService", "org.apache.oozie.service.PurgeService",
+            "org.apache.oozie.service.CoordMaterializeTriggerService", "org.apache.oozie.service.RecoveryService" };
 
     @Override
     protected void setUp() throws Exception {
         super.setUp();
         setSystemProperty(SchemaService.WF_CONF_EXT_SCHEMAS, "wf-ext-schema.xsd");
         services = new Services();
+        setClassesToBeExcluded(services.getConf(), excludedServices);
         services.init();
         services.get(ActionService.class).register(ForTestingActionExecutor.class);
     }
@@ -78,6 +80,7 @@ public class TestPurgeService extends XDataTestCase {
         services.destroy();
         super.tearDown();
     }
+
 
     /**
      * Tests the {@link org.apache.oozie.service.PurgeService}.
@@ -112,7 +115,7 @@ public class TestPurgeService extends XDataTestCase {
         });
         assertEquals(WorkflowJob.Status.SUCCEEDED, engine.getJob(jobId).getStatus());
         new PurgeXCommand(1, 10000).call();
-        Thread.sleep(1000);
+        sleep(1000);
 
         JPAService jpaService = Services.get().get(JPAService.class);
         WorkflowJobGetJPAExecutor wfJobGetCmd = new WorkflowJobGetJPAExecutor(jobId);
@@ -159,7 +162,11 @@ public class TestPurgeService extends XDataTestCase {
      * Calls the purge service, and ensure the job does not exist in the system.
      */
     public void testPurgeServiceForCoordinator() throws Exception {
-        CoordinatorJobBean job = addRecordToCoordJobTable(CoordinatorJob.Status.SUCCEEDED, false, false);
+        String currentDatePlusMonth = XDataTestCase.getCurrentDateafterIncrementingInMonths(1);
+        Date start = DateUtils.parseDateOozieTZ(currentDatePlusMonth);
+        Date end = DateUtils.parseDateOozieTZ(currentDatePlusMonth);
+        CoordinatorJobBean job = addRecordToCoordJobTable(CoordinatorJob.Status.SUCCEEDED, start, end, false, false, 0);
+
         final String jobId = job.getId();
         CoordinatorActionBean action = addRecordToCoordActionTable(job.getId(), 1, CoordinatorAction.Status.SUCCEEDED,
                 "coord-action-get.xml", 0);
@@ -217,7 +224,8 @@ public class TestPurgeService extends XDataTestCase {
      * Calls the purge service, and ensure the job does not exist in the system.
      */
     public void testPurgeServiceForBundle() throws Exception {
-        BundleJobBean job = this.addRecordToBundleJobTable(Job.Status.SUCCEEDED, DateUtils.parseDateUTC("2011-01-01T01:00Z"));
+        BundleJobBean job = this.addRecordToBundleJobTable(Job.Status.SUCCEEDED, DateUtils.parseDateOozieTZ(
+            "2011-01-01T01:00Z"));
         final String jobId = job.getId();
         this.addRecordToBundleActionTable(job.getId(), "action1", 0, Job.Status.SUCCEEDED);
         this.addRecordToBundleActionTable(job.getId(), "action2", 0, Job.Status.SUCCEEDED);
@@ -295,9 +303,10 @@ public class TestPurgeService extends XDataTestCase {
     }
 
     @Override
-    protected CoordinatorJobBean addRecordToCoordJobTable(CoordinatorJob.Status status, boolean pending, boolean doneMatd) throws Exception {
-        CoordinatorJobBean coordJob = createCoordJob(status, pending, doneMatd);
-        coordJob.setLastModifiedTime(DateUtils.parseDateUTC("2009-12-18T01:00Z"));
+    protected CoordinatorJobBean addRecordToCoordJobTable(CoordinatorJob.Status status, Date start, Date end,
+            boolean pending, boolean doneMatd, int lastActionNum) throws Exception {
+        CoordinatorJobBean coordJob = createCoordJob(status, start, end, pending, doneMatd, lastActionNum);
+        coordJob.setLastModifiedTime(DateUtils.parseDateOozieTZ("2009-12-18T01:00Z"));
         try {
             JPAService jpaService = Services.get().get(JPAService.class);
             assertNotNull(jpaService);

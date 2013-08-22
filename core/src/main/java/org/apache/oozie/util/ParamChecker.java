@@ -64,11 +64,23 @@ public class ParamChecker {
      * @return the given value.
      */
     public static String notEmpty(String str, String name) {
+        return notEmpty(str, name, null);
+    }
+
+    /**
+     * Check that a string is not null and not empty. If null or emtpy throws an IllegalArgumentException.
+     *
+     * @param str value.
+     * @param name parameter name for the exception message.
+     * @param info additional information to be printed with the exception message
+     * @return the given value.
+     */
+    public static String notEmpty(String str, String name, String info) {
         if (str == null) {
-            throw new IllegalArgumentException(name + " cannot be null");
+            throw new IllegalArgumentException(name + " cannot be null" + (info == null ? "" : ", " + info));
         }
         if (str.length() == 0) {
-            throw new IllegalArgumentException(name + " cannot be empty");
+            throw new IllegalArgumentException(name + " cannot be empty" + (info == null ? "" : ", " + info));
         }
         return str;
     }
@@ -182,27 +194,29 @@ public class ParamChecker {
         }
         catch (NumberFormatException nex) {
             throw new IllegalArgumentException(XLog.format(
-                    "parameter [{0}] = [{1}]  must be an integer. Parsing error {2}", name, val, nex));
+                    "parameter [{0}] = [{1}]  must be an integer. Parsing error {2}", name, val, nex.getMessage(), nex));
         }
         return ret;
     }
 
     /**
-     * Check whether the value is UTC data format.
+     * Check whether the value is Oozie processing timezone data format.
      *
      * @param value : value to test
      * @param name : Name of the parameter
-     * @return If the value is in UTC date format, return the value. Otherwise throw IllegalArgumentException
+     * @return If the value is in Oozie processing timezone date format, return the value.
+     * Otherwise throw IllegalArgumentException
      */
-    public static Date checkUTC(String date, String name) {
+    public static Date checkDateOozieTZ(String date, String name) {
         Date ret;
         try {
-            ret = DateUtils.parseDateUTC(date);
+            ret = DateUtils.parseDateOozieTZ(date);
         }
         catch (Exception ex) {
             throw new IllegalArgumentException(XLog.format(
-                    "parameter [{0}] = [{1}] must be Date in UTC format (yyyy-MM-dd'T'HH:mm'Z')."
-                            + " Parsing error {2}", name, date, ex));
+                    "parameter [{0}] = [{1}] must be Date in {2} format ({3})."
+                            + " Parsing error {4}", name, date, DateUtils.getOozieProcessingTimeZone().getID(),
+                    DateUtils.getOozieTimeMask(), ex));
         }
         return ret;
     }
@@ -221,7 +235,7 @@ public class ParamChecker {
         }
         catch (Exception ex) {
             throw new IllegalArgumentException(XLog.format("parameter [{0}] = [{1}] must be a valid TZ."
-                    + " Parsing error {2}", name, tzStr, ex));
+                    + " Parsing error {2}", name, tzStr, ex.getMessage(), ex));
         }
         return tz;
     }

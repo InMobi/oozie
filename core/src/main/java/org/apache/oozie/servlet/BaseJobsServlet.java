@@ -52,7 +52,8 @@ public abstract class BaseJobsServlet extends JsonRestServlet {
                                                   String.class, false, Arrays.asList("GET")),
                 new JsonRestServlet.ParameterInfo(RestConstants.LEN_PARAM,
                                                   String.class, false, Arrays.asList("GET")),
-
+                new JsonRestServlet.ParameterInfo(RestConstants.JOBS_BULK_PARAM,
+                                                  String.class, false, Arrays.asList("GET")),
                 new JsonRestServlet.ParameterInfo(
                         RestConstants.JOBS_EXTERNAL_ID_PARAM, String.class,
                         false, Arrays.asList("GET"))));
@@ -89,7 +90,11 @@ public abstract class BaseJobsServlet extends JsonRestServlet {
         conf = conf.resolve();
 
         validateJobConfiguration(conf);
-        BaseJobServlet.checkAuthorizationForApp(getUser(request), conf);
+        String requestUser = getUser(request);
+        if (!requestUser.equals(UNDEF)) {
+            conf.set(OozieClient.USER_NAME, requestUser);
+        }
+        BaseJobServlet.checkAuthorizationForApp(conf);
         JobUtils.normalizeAppPath(conf.get(OozieClient.USER_NAME), conf.get(OozieClient.GROUP_NAME), conf);
 
         JSONObject json = submitJob(request, conf);

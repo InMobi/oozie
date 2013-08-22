@@ -17,6 +17,7 @@
  */
 package org.apache.oozie.client;
 
+import java.io.DataOutputStream;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.io.StringReader;
@@ -101,6 +102,59 @@ public class TestOozieCLI extends DagServletTestCase {
         return path;
     }
 
+    private String createPigPropertiesFile(String appPath) throws Exception {
+        String path = getTestCaseDir() + "/" + getName() + ".properties";
+        Properties props = new Properties();
+        props.setProperty(OozieClient.USER_NAME, getTestUser());
+        props.setProperty(XOozieClient.NN, "localhost:9000");
+        props.setProperty(XOozieClient.JT, "localhost:9001");
+        props.setProperty("oozie.libpath", appPath);
+        props.setProperty("mapred.output.dir", appPath);
+        props.setProperty("a", "A");
+
+        OutputStream os = new FileOutputStream(path);
+        props.store(os, "");
+        os.close();
+        return path;
+    }
+
+    private String createMRProperties(String appPath) throws Exception {
+        String path = getTestCaseDir() + "/" + getName() + ".properties";
+        Properties props = new Properties();
+        props.setProperty(OozieClient.USER_NAME, getTestUser());
+        props.setProperty(OozieClient.GROUP_NAME, getTestGroup());
+        props.setProperty(OozieClient.APP_PATH, appPath);
+        props.setProperty(OozieClient.RERUN_SKIP_NODES, "node");
+        props.setProperty(XOozieClient.NN, "localhost:9000");
+        props.setProperty(XOozieClient.JT, "localhost:9001");
+        props.setProperty("mapred.mapper.class", "mapper.class");
+        props.setProperty("mapred.reducer.class", "reducer.class");
+        props.setProperty("mapred.input.dir", "input");
+        props.setProperty("mapred.output.dir", "output");
+        props.setProperty("oozie.libpath", appPath);
+        props.setProperty("a", "A");
+
+        OutputStream os = new FileOutputStream(path);
+        props.store(os, "");
+        os.close();
+        return path;
+    }
+
+    private String createPigScript(String appPath) throws Exception {
+        String path = getTestCaseDir() + "/" + getName() + ".properties";
+
+        DataOutputStream dos = new DataOutputStream(new FileOutputStream(path));
+
+        String pigScript = "A = load \'/user/data\' using PigStorage(:);\n" +
+        		           "B = foreach A generate $0" +
+                           "dumb B;";
+
+        dos.writeBytes(pigScript);
+        dos.close();
+
+        return path;
+    }
+
     public void testSubmit() throws Exception {
         runTest(END_POINTS, SERVLET_CLASSES, IS_SECURITY_ENABLED, new Callable<Void>() {
             public Void call() throws Exception {
@@ -143,7 +197,45 @@ public class TestOozieCLI extends DagServletTestCase {
         });
     }
 
+    public void testSubmitPig() throws Exception {
+        runTest(END_POINTS, SERVLET_CLASSES, IS_SECURITY_ENABLED, new Callable<Void>() {
+            public Void call() throws Exception {
+                String oozieUrl = getContextURL();
+                int wfCount = MockDagEngineService.INIT_WF_COUNT;
+
+                Path appPath = new Path(getFsTestCaseDir(), "app");
+                getFileSystem().mkdirs(appPath);
+
+                String[] args = new String[]{"pig", "-oozie", oozieUrl, "-file", createPigScript(appPath.toString()), "-config",
+                        createPigPropertiesFile(appPath.toString())};
+                assertEquals(0, new OozieCLI().run(args));
+                assertEquals("submitPig", MockDagEngineService.did);
+                assertTrue(MockDagEngineService.started.get(wfCount));
+                return null;
+            }
+        });
+    }
+
+    public void testSubmitMapReduce() throws Exception {
+        runTest(END_POINTS, SERVLET_CLASSES, IS_SECURITY_ENABLED, new Callable<Void>() {
+            public Void call() throws Exception {
+                String oozieUrl = getContextURL();
+                int wfCount = MockDagEngineService.INIT_WF_COUNT;
+
+                Path appPath = new Path(getFsTestCaseDir(), "app");
+                getFileSystem().mkdirs(appPath);
+
+                String[] args = new String[]{"mapreduce", "-oozie", oozieUrl, "-config", createMRProperties(appPath.toString())};
+                assertEquals(0, new OozieCLI().run(args));
+                assertEquals("submitMR", MockDagEngineService.did);
+                assertTrue(MockDagEngineService.started.get(wfCount));
+                return null;
+            }
+        });
+    }
+
     public void testSubmitDoAs() throws Exception {
+        setSystemProperty("oozie.authentication.simple.anonymous.allowed", "false");
         runTest(END_POINTS, SERVLET_CLASSES, IS_SECURITY_ENABLED, new Callable<Void>() {
             public Void call() throws Exception {
                 String oozieUrl = getContextURL();
@@ -195,6 +287,30 @@ public class TestOozieCLI extends DagServletTestCase {
                 int wfCount = MockDagEngineService.INIT_WF_COUNT;
                 String[] args = new String[]{"job", "-run", "-oozie", oozieUrl, "-config",
                         createConfigFile(appPath.toString())};
+                assertEquals(0, new OozieCLI().run(args));
+                assertEquals("submit", MockDagEngineService.did);
+                assertTrue(MockDagEngineService.started.get(wfCount));
+
+                return null;
+            }
+        });
+    }
+
+    /**
+     * Check if "-debug" option is accepted at CLI with job run command
+     * 
+     * @throws Exception
+     */
+    public void testRunWithDebug() throws Exception {
+        runTest(END_POINTS, SERVLET_CLASSES, IS_SECURITY_ENABLED, new Callable<Void>() {
+            public Void call() throws Exception {
+                Path appPath = new Path(getFsTestCaseDir(), "app");
+                getFileSystem().mkdirs(appPath);
+                getFileSystem().create(new Path(appPath, "workflow.xml")).close();
+                String oozieUrl = getContextURL();
+                int wfCount = MockDagEngineService.INIT_WF_COUNT;
+                String[] args = new String[]{"job", "-run", "-oozie", oozieUrl, "-config",
+                        createConfigFile(appPath.toString()), "-debug"};
                 assertEquals(0, new OozieCLI().run(args));
                 assertEquals("submit", MockDagEngineService.did);
                 assertTrue(MockDagEngineService.started.get(wfCount));
@@ -396,11 +512,16 @@ public class TestOozieCLI extends DagServletTestCase {
                 assertEquals(0, new OozieCLI().run(args));
                 assertEquals(RestConstants.JOB_SHOW_INFO, MockDagEngineService.did);
 
+                args = new String[]{"job", "-timezone", "PST", "-oozie", oozieUrl, "-info", 
+                    MockDagEngineService.JOB_ID + "1" + MockDagEngineService.JOB_ID_END};
+                assertEquals(0, new OozieCLI().run(args));
+                assertEquals(RestConstants.JOB_SHOW_INFO, MockDagEngineService.did);
+                
                 args = new String[]{"job", "-oozie", oozieUrl, "-info", MockDagEngineService.JOB_ID + "2" +
                     MockDagEngineService.JOB_ID_END};
                 assertEquals(0, new OozieCLI().run(args));
                 assertEquals(RestConstants.JOB_SHOW_INFO, MockDagEngineService.did);
-
+                
                 args = new String[]{"job", "-oozie", oozieUrl, "-info",
                         MockDagEngineService.JOB_ID + (MockDagEngineService.workflows.size() + 1)};
                 assertEquals(-1, new OozieCLI().run(args));
@@ -422,6 +543,12 @@ public class TestOozieCLI extends DagServletTestCase {
                         "name=x"};
                 assertEquals(0, new OozieCLI().run(args));
                 assertEquals(RestConstants.JOBS_FILTER_PARAM, MockDagEngineService.did);
+                
+                args = new String[]{"jobs", "-timezone", "PST", "-len", "3", "-offset", "2", "-oozie", oozieUrl, 
+                    "-filter", "name=x"};
+                assertEquals(0, new OozieCLI().run(args));
+                assertEquals(RestConstants.JOBS_FILTER_PARAM, MockDagEngineService.did);
+                
                 args = new String[]{"jobs", "-jobtype", "coord",  "-filter", "status=FAILED", "-oozie", oozieUrl};
                 assertEquals(0, new OozieCLI().run(args));
                 assertEquals(RestConstants.JOBS_FILTER_PARAM, MockDagEngineService.did);                
@@ -581,5 +708,10 @@ public class TestOozieCLI extends DagServletTestCase {
                 return null;
             }
         });
+    }
+    
+    public void testInfo() throws Exception {
+        String[] args = new String[]{"info"};
+        assertEquals(0, new OozieCLI().run(args));
     }
 }

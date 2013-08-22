@@ -26,11 +26,9 @@ import org.apache.oozie.ErrorCode;
 import org.apache.oozie.XException;
 import org.apache.oozie.client.CoordinatorAction;
 import org.apache.oozie.client.CoordinatorJob;
-import org.apache.oozie.command.CommandException;
 import org.apache.oozie.local.LocalOozie;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.test.XDataTestCase;
-import org.apache.oozie.util.DateUtils;
 
 public class TestCoordActionsInDateRange extends XDataTestCase {
 
@@ -68,8 +66,9 @@ public class TestCoordActionsInDateRange extends XDataTestCase {
             long nominalTimeMilliseconds = nominalTime.getTime();
             long noOfMillisecondsinOneHour = 3600000;
 
-            String date1 = DateUtils.formatDateUTC(new Date(nominalTimeMilliseconds - (noOfMillisecondsinOneHour / 2)));
-            String date2 = DateUtils.formatDateUTC(new Date(nominalTimeMilliseconds + noOfMillisecondsinOneHour));
+            String date1 = DateUtils.formatDateOozieTZ(
+                new Date(nominalTimeMilliseconds - (noOfMillisecondsinOneHour / 2)));
+            String date2 = DateUtils.formatDateOozieTZ(new Date(nominalTimeMilliseconds + noOfMillisecondsinOneHour));
 
             // Test a bad date format.
             try {
@@ -106,12 +105,24 @@ public class TestCoordActionsInDateRange extends XDataTestCase {
               assertEquals(ErrorCode.E0308, e.getErrorCode());
             }
 
+            // Test a lenient date
+            try {
+              String lenientDate = date2.replaceAll("[^-]*T", "50T"); // Like date2 but with the 50th day of the month
+              CoordActionsInDateRange.getCoordActionIdsFromDates(
+                  job.getId().toString(),
+                  date1 + "::" + lenientDate);
+              fail("Accepted lenient date: " + lenientDate);
+            } catch(XException e) {
+              // Pass
+              assertEquals(ErrorCode.E0308, e.getErrorCode());
+            }
+
             // Testing for the number of coordinator actions in a date range that spans from half an hour prior to the nominal time to 1 hour after the nominal time
             int noOfActions = CoordActionsInDateRange.getCoordActionIdsFromDates(job.getId().toString(), date1 + "::" + date2).size();
             assertEquals(1, noOfActions);
 
             // Testing for the number of coordinator actions in a date range that spans from half an hour after the nominal time to 1 hour after the nominal time
-            date1 = DateUtils.formatDateUTC(new Date(nominalTimeMilliseconds + (noOfMillisecondsinOneHour / 2)));
+            date1 = DateUtils.formatDateOozieTZ(new Date(nominalTimeMilliseconds + (noOfMillisecondsinOneHour / 2)));
             noOfActions = CoordActionsInDateRange.getCoordActionIdsFromDates(job.getId().toString(), date1 + "::" + date2).size();
             assertEquals(0, noOfActions);
         }

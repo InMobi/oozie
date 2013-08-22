@@ -42,12 +42,10 @@ public class TestCoordJobGetActionsSubsetJPAExecutor extends XDataTestCase {
         services = new Services();
         services.init();
         cleanUpDBTables();
-        LocalOozie.start();
     }
 
     @Override
     protected void tearDown() throws Exception {
-        LocalOozie.stop();
         services.destroy();
         super.tearDown();
     }
@@ -79,7 +77,7 @@ public class TestCoordJobGetActionsSubsetJPAExecutor extends XDataTestCase {
         //Pass expected values
         _testGetActionsSubset(job.getId(), action.getId(), 1, 1, "consoleUrl", "errorCode", "errorMessage",
                 action.getId() + "_E", "externalStatus", "trackerUri", dummyCreationTime,
-                DateUtils.parseDateUTC(actionNominalTime), missDeps, 10, CoordinatorAction.Status.WAITING);
+                DateUtils.parseDateOozieTZ(actionNominalTime), missDeps, 10, CoordinatorAction.Status.WAITING);
 
     }
 
@@ -161,22 +159,19 @@ public class TestCoordJobGetActionsSubsetJPAExecutor extends XDataTestCase {
     }
 
     public void testGetActionAllColumns() throws Exception{
+        services.destroy();
         setSystemProperty(CoordActionGetForInfoJPAExecutor.COORD_GET_ALL_COLS_FOR_ACTION, "true");
-        new Services().init();
-        try {
-            int actionNum = 1;
-            String slaXml = "slaXml";
-            String resourceXmlName = "coord-action-get.xml";
-            CoordinatorJobBean job = addRecordToCoordJobTable(CoordinatorJob.Status.RUNNING, false, false);
-            CoordinatorActionBean action = createCoordAction(job.getId(), actionNum, CoordinatorAction.Status.WAITING,
-                    resourceXmlName, 0);
-            action.setSlaXml(slaXml);
-            insertRecordCoordAction(action);
-            _testGetForInfoAllActions(job.getId(), slaXml, 1, 1);
-        }
-        finally {
-            Services.get().destroy();
-        }
+        services = new Services();
+        services.init();
+        int actionNum = 1;
+        String slaXml = "slaXml";
+        String resourceXmlName = "coord-action-get.xml";
+        CoordinatorJobBean job = addRecordToCoordJobTable(CoordinatorJob.Status.RUNNING, false, false);
+        CoordinatorActionBean action = createCoordAction(job.getId(), actionNum, CoordinatorAction.Status.WAITING,
+                resourceXmlName, 0);
+        action.setSlaXml(slaXml);
+        insertRecordCoordAction(action);
+        _testGetForInfoAllActions(job.getId(), slaXml, 1, 1);
     }
 
     private void _testGetForInfoAllActions(String jobId, String slaXml, int start, int len) throws Exception {

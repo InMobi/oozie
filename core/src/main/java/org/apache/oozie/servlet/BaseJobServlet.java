@@ -20,15 +20,11 @@ package org.apache.oozie.servlet;
 import java.io.IOException;
 import java.util.Arrays;
 
-import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.oozie.BaseEngineException;
 import org.apache.oozie.ErrorCode;
 import org.apache.oozie.client.OozieClient;
@@ -37,8 +33,6 @@ import org.apache.oozie.client.rest.JsonBean;
 import org.apache.oozie.client.rest.RestConstants;
 import org.apache.oozie.service.AuthorizationException;
 import org.apache.oozie.service.AuthorizationService;
-import org.apache.oozie.service.HadoopAccessorException;
-import org.apache.oozie.service.HadoopAccessorService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.service.XLogService;
 import org.apache.oozie.util.ConfigUtils;
@@ -112,7 +106,11 @@ public abstract class BaseJobServlet extends JsonRestServlet {
             validateContentType(request, RestConstants.XML_CONTENT_TYPE);
             Configuration conf = new XConfiguration(request.getInputStream());
             stopCron();
-            checkAuthorizationForApp(getUser(request), conf);
+            String requestUser = getUser(request);
+            if (!requestUser.equals(UNDEF)) {
+                conf.set(OozieClient.USER_NAME, requestUser);
+            }
+            BaseJobServlet.checkAuthorizationForApp(conf);
             JobUtils.normalizeAppPath(conf.get(OozieClient.USER_NAME), conf.get(OozieClient.GROUP_NAME), conf);
             reRunJob(request, response, conf);
             startCron();
@@ -151,24 +149,23 @@ public abstract class BaseJobServlet extends JsonRestServlet {
     /**
      * Validate the configuration user/group. <p/>
      *
-     * @param requestUser user in request.
      * @param conf configuration.
      * @throws XServletException thrown if the configuration does not have a property {@link
      * org.apache.oozie.client.OozieClient#USER_NAME}.
      */
-    static void checkAuthorizationForApp(String requestUser, Configuration conf) throws XServletException {
+    static void checkAuthorizationForApp(Configuration conf) throws XServletException {
         String user = conf.get(OozieClient.USER_NAME);
         String acl = ConfigUtils.getWithDeprecatedCheck(conf, OozieClient.GROUP_NAME, OozieClient.JOB_ACL, null);
         try {
             if (user == null) {
                 throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ErrorCode.E0401, OozieClient.USER_NAME);
             }
-            if (!requestUser.equals(UNDEF) && !user.equals(requestUser)) {
-                throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ErrorCode.E0400, requestUser, user);
-            }
             AuthorizationService auth = Services.get().get(AuthorizationService.class);
 
-            if (acl == null && auth.useDefaultGroupAsAcl()) {
+            if (acl != null){
+            	 conf.set(OozieClient.GROUP_NAME, acl);
+            }
+            else if (acl == null && auth.useDefaultGroupAsAcl()) {
                 acl = auth.getDefaultGroup(user);
                 conf.set(OozieClient.GROUP_NAME, acl);
             }
@@ -178,9 +175,14 @@ public abstract class BaseJobServlet extends JsonRestServlet {
             String bundlePath = conf.get(OozieClient.BUNDLE_APP_PATH);
 
             if (wfPath == null && coordPath == null && bundlePath == null) {
-                String libPath = conf.get(XOozieClient.LIBPATH);
-                conf.set(OozieClient.APP_PATH, libPath);
-                wfPath = libPath;
+                String[] libPaths = conf.getStrings(XOozieClient.LIBPATH);
+                if (libPaths != null && libPaths.length > 0 && libPaths[0].trim().length() > 0) {
+                    conf.set(OozieClient.APP_PATH, libPaths[0].trim());
+                    wfPath = libPaths[0].trim();
+                }
+                else {
+                    throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ErrorCode.E0405);
+                }
             }
             ServletUtilities.ValidateAppPath(wfPath, coordPath, bundlePath);
 
@@ -207,6 +209,8 @@ public abstract class BaseJobServlet extends JsonRestServlet {
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         String jobId = getResourceName(request);
         String show = request.getParameter(RestConstants.JOB_SHOW_PARAM);
+        String timeZoneId = request.getParameter(RestConstants.TIME_ZONE_PARAM) == null
+                ? "GMT" : request.getParameter(RestConstants.TIME_ZONE_PARAM);
 
         try {
             AuthorizationService auth = Services.get().get(AuthorizationService.class);
@@ -229,7 +233,7 @@ public abstract class BaseJobServlet extends JsonRestServlet {
                 throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, e);
             }
             startCron();
-            sendJsonResponse(response, HttpServletResponse.SC_OK, job);
+            sendJsonResponse(response, HttpServletResponse.SC_OK, job, timeZoneId);
         }
         else if (show.equals(RestConstants.JOB_SHOW_LOG)) {
             response.setContentType(TEXT_UTF8);
@@ -242,6 +246,11 @@ public abstract class BaseJobServlet extends JsonRestServlet {
             startCron();
             response.setStatus(HttpServletResponse.SC_OK);
             response.getWriter().write(wfDefinition);
+        }
+        else if (show.equals(RestConstants.JOB_SHOW_GRAPH)) {
+            stopCron();
+            streamJobGraph(request, response);
+            startCron(); // -- should happen before you stream anything in response?
         }
         else {
             throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ErrorCode.E0303,
@@ -352,4 +361,14 @@ public abstract class BaseJobServlet extends JsonRestServlet {
     abstract void streamJobLog(HttpServletRequest request, HttpServletResponse response) throws XServletException,
             IOException;
 
+    /**
+     * abstract method to create and stream image for runtime DAG -- workflow only
+     *
+     * @param request
+     * @param response
+     * @throws XServletException
+     * @throws IOException
+     */
+    abstract void streamJobGraph(HttpServletRequest request, HttpServletResponse response)
+            throws XServletException, IOException;
 }

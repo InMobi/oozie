@@ -83,7 +83,7 @@ public class OozieDBCLI {
         used = true;
 
         CLIParser parser = new CLIParser("ooziedb.sh", HELP_INFO);
-        parser.addCommand(HELP_CMD, "", "display usage", new Options(), false);
+        parser.addCommand(HELP_CMD, "", "display usage for all commands or specified command", new Options(), false);
         parser.addCommand(VERSION_CMD, "", "show Oozie DB version information", new Options(), false);
         parser.addCommand(CREATE_CMD, "", "create Oozie DB schema", createUpgradeOptions(), false);
         parser.addCommand(UPGRADE_CMD, "", "upgrade Oozie DB", createUpgradeOptions(), false);
@@ -93,7 +93,7 @@ public class OozieDBCLI {
             System.out.println();
             CLIParser.Command command = parser.parse(args);
             if (command.getName().equals(HELP_CMD)) {
-                parser.showHelp();
+                parser.showHelp(command.getCommandLine());
             }
             else if (command.getName().equals(VERSION_CMD)) {
                 showVersion();
@@ -137,6 +137,7 @@ public class OozieDBCLI {
             System.err.println();
             System.err.println("Error: " + ex.getMessage());
             System.err.println();
+            System.err.println("Stack trace for the error was (for debug purposes):");
             System.err.println("--------------------------------------");
             ex.printStackTrace(System.err);
             System.err.println("--------------------------------------");
@@ -560,6 +561,7 @@ public class OozieDBCLI {
         args.add("org.apache.oozie.client.rest.JsonBundleJob");
         args.add("org.apache.oozie.BundleJobBean");
         args.add("org.apache.oozie.BundleActionBean");
+        args.add("org.apache.oozie.util.db.ValidateConnectionBean");
         return args.toArray(new String[args.size()]);
     }
 

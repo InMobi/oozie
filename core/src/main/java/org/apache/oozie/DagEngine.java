@@ -462,12 +462,12 @@ public class DagEngine extends BaseEngine {
 
     @Override
     public CoordinatorJob getCoordJob(String jobId) throws BaseEngineException {
-        throw new BaseEngineException(new XException(ErrorCode.E0301));
+        throw new BaseEngineException(new XException(ErrorCode.E0301, "cannot get a coordinator job from DagEngine"));
     }
 
     @Override
     public CoordinatorJob getCoordJob(String jobId, String filter, int start, int length) throws BaseEngineException {
-        throw new BaseEngineException(new XException(ErrorCode.E0301));
+        throw new BaseEngineException(new XException(ErrorCode.E0301, "cannot get a coordinator job from DagEngine"));
     }
 
     public WorkflowActionBean getWorkflowAction(String actionId) throws BaseEngineException {
@@ -479,8 +479,16 @@ public class DagEngine extends BaseEngine {
         }
     }
 
+    /* (non-Javadoc)
+     * @see org.apache.oozie.BaseEngine#dryRunSubmit(org.apache.hadoop.conf.Configuration)
+     */
     @Override
-    public String dryrunSubmit(Configuration conf, boolean startJob) throws BaseEngineException {
-        return null;
+    public String dryRunSubmit(Configuration conf) throws BaseEngineException {
+        try {
+            SubmitXCommand submit = new SubmitXCommand(true, conf, getAuthToken());
+            return submit.call();
+        } catch (CommandException ex) {
+            throw new DagEngineException(ex);
+        }
     }
 }

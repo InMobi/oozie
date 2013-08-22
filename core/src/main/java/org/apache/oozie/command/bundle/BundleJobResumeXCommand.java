@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -61,18 +61,19 @@ public class BundleJobResumeXCommand extends ResumeTransitionXCommand {
     @Override
     public void resumeChildren() {
         for (BundleActionBean action : bundleActions) {
-            if (action.getStatus() == Job.Status.SUSPENDED || action.getStatus() == Job.Status.PREPSUSPENDED) {
+            if (action.getStatus() == Job.Status.SUSPENDED || action.getStatus() == Job.Status.SUSPENDEDWITHERROR || action.getStatus() == Job.Status.PREPSUSPENDED) {
                 // queue a CoordResumeXCommand
                 if (action.getCoordId() != null) {
                     queue(new CoordResumeXCommand(action.getCoordId()));
                     updateBundleAction(action);
-                    LOG.debug(
-                            "Resume bundle action = [{0}], new status = [{1}], pending = [{2}] and queue CoordResumeXCommand for [{3}]",
-                            action.getBundleActionId(), action.getStatus(), action.getPending(), action.getCoordId());
-                } else {
+                    LOG.debug("Resume bundle action = [{0}], new status = [{1}], pending = [{2}] and queue CoordResumeXCommand for [{3}]",
+                                    action.getBundleActionId(), action.getStatus(), action.getPending(), action
+                                            .getCoordId());
+                }
+                else {
                     updateBundleAction(action);
                     LOG.debug("Resume bundle action = [{0}], new status = [{1}], pending = [{2}] and coord id is null",
-                            action.getBundleActionId(), action.getStatus(), action.getPending());
+                                    action.getBundleActionId(), action.getStatus(), action.getPending());
                 }
             }
         }
@@ -85,6 +86,9 @@ public class BundleJobResumeXCommand extends ResumeTransitionXCommand {
         }
         else if (action.getStatus() == Job.Status.SUSPENDED) {
             action.setStatus(Job.Status.RUNNING);
+        }
+        else if (action.getStatus() == Job.Status.SUSPENDEDWITHERROR) {
+            action.setStatus(Job.Status.RUNNINGWITHERROR);
         }
         action.incrementAndGetPending();
         action.setLastModifiedTime(new Date());
@@ -166,9 +170,9 @@ public class BundleJobResumeXCommand extends ResumeTransitionXCommand {
      */
     @Override
     protected void verifyPrecondition() throws CommandException, PreconditionException {
-        if (bundleJob.getStatus() != Job.Status.SUSPENDED && bundleJob.getStatus() != Job.Status.PREPSUSPENDED) {
+        if (bundleJob.getStatus() != Job.Status.SUSPENDED && bundleJob.getStatus() != Job.Status.SUSPENDEDWITHERROR && bundleJob.getStatus() != Job.Status.PREPSUSPENDED) {
             throw new PreconditionException(ErrorCode.E1100, "BundleResumeCommand not Resumed - "
-                    + "job not in SUSPENDED/PREPSUSPENDED state " + bundleId);
+                    + "job not in SUSPENDED/SUSPENDEDWITHERROR/PREPSUSPENDED state " + bundleId);
         }
     }
 

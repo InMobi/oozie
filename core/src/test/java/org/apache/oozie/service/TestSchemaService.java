@@ -22,23 +22,15 @@ import org.apache.oozie.service.SchemaService.SchemaName;
 import org.apache.oozie.test.XTestCase;
 import org.apache.oozie.util.XmlUtils;
 import org.jdom.Element;
-import org.xml.sax.SAXParseException;
 
 import javax.xml.validation.Validator;
 import javax.xml.transform.stream.StreamSource;
 
 import java.io.StringReader;
-import java.util.concurrent.TimeoutException;
 
 public class TestSchemaService extends XTestCase {
 
-    public static final String LONG_STRING_PATTERN_VALIDATION = "I_am_long_string_with_a_period_._which_is_not_allowed_according_to_schema";
-    public static final String APP_NEG_TEST = "<workflow-app xmlns='uri:oozie:workflow:0.1' name='"+LONG_STRING_PATTERN_VALIDATION+"'>" +
-            "<start to='end'/>" +
-            "<end name='end'/>" +
-            "</workflow-app>";
-
-	private static final String APP1 = "<workflow-app xmlns='uri:oozie:workflow:0.1' name='app'>" +
+    private static final String APP1 = "<workflow-app xmlns='uri:oozie:workflow:0.1' name='app'>" +
             "<start to='end'/>" +
             "<end name='end'/>" +
             "</workflow-app>";
@@ -54,8 +46,8 @@ public class TestSchemaService extends XTestCase {
             + "<end name='end'/>"
             + "<sla:info> <sla:app-name>5</sla:app-name> <sla:nominal-time>2009-03-06T010:00Z</sla:nominal-time> "
             + "<sla:should-start>5</sla:should-start> <sla:should-end>50</sla:should-end> "
-            + "<sla:alert-contact>abc@yahoo.com</sla:alert-contact> <sla:dev-contact>abc@yahoo.com</sla:dev-contact>"
-            + " <sla:qa-contact>abc@yahoo.com</sla:qa-contact> <sla:se-contact>abc@yahoo.com</sla:se-contact>"
+            + "<sla:alert-contact>abc@example.com</sla:alert-contact> <sla:dev-contact>abc@example.com</sla:dev-contact>"
+            + " <sla:qa-contact>abc@example.com</sla:qa-contact> <sla:se-contact>abc@example.com</sla:se-contact>"
             + "</sla:info>" + "</workflow-app>";
 
     private static final String WF_SLA_APP_NW = "<workflow-app xmlns='uri:oozie:workflow:0.1' name='app'  xmlns:sla='uri:oozie:sla:0.1'>"
@@ -63,8 +55,8 @@ public class TestSchemaService extends XTestCase {
             + "<end name='end'/>"
             + "<sla:info> <sla:app-name>5</sla:app-name> <sla:nominal-time>2009-03-06T010:00Z</sla:nominal-time> "
             + "<sla:should-start>5</sla:should-start> <sla:should-end>50</sla:should-end> "
-            + "<sla:alert-contact>abc@yahoo.com</sla:alert-contact> <sla:dev-contact>abc@yahoo.com</sla:dev-contact>"
-            + " <sla:qa-contact>abc@yahoo.com</sla:qa-contact> <sla:se-contact>abc@yahoo.com</sla:se-contact>"
+            + "<sla:alert-contact>abc@example.com</sla:alert-contact> <sla:dev-contact>abc@example.com</sla:dev-contact>"
+            + " <sla:qa-contact>abc@example.com</sla:qa-contact> <sla:se-contact>abc@example.com</sla:se-contact>"
             + "</sla:info>" + "</workflow-app>";
 
     private static final String COORD_APP1 = "<coordinator-app name=\"NAME\" frequency=\"${coord:days(1)}\" start=\"${start}\" end=\"${end}\" timezone=\"${timezone}\" xmlns=\"uri:oozie:coordinator:0.2\">"
@@ -92,6 +84,22 @@ public class TestSchemaService extends XTestCase {
             "<end name='end'/>" +
             "</workflow-app>";
 
+    private static final String WF_4_MULTIPLE_JAVA_OPTS = "<workflow-app xmlns='uri:oozie:workflow:0.4' name ='app'>" +
+            "<start to='a'/>" +
+            "<action name='a'>" +
+            "<java>" +
+            "<job-tracker>JT</job-tracker>" +
+            "<name-node>NN</name-node>" +
+            "<main-class>main.java</main-class>" +
+            "<java-opt>-Dparam1=1</java-opt>" +
+            "<java-opt>-Dparam2=2</java-opt>" +
+            "</java>" +
+            "<ok to='end'/>" +
+            "<error to='end'/>" +
+            "</action>" +
+             "<end name='end'/>" +
+            "</workflow-app>";
+
     @Override
     protected void setUp() throws Exception {
         super.setUp();
@@ -114,32 +122,10 @@ public class TestSchemaService extends XTestCase {
         validator.validate(new StreamSource(new StringReader(APP1)));
     }
 
-    // Test for validation of workflow definition against pattern defined in schema to complete within 3 seconds
-    public void testWfSchemaFailure() throws Exception {
+    public void testWfMultipleJavaOpts() throws Exception {
         SchemaService wss = Services.get().get(SchemaService.class);
-        final Validator validator = wss.getSchema(SchemaName.WORKFLOW).newValidator();
-        Thread testThread = new Thread() {
-            public void run() {
-                try {
-                    // Validate against wf def
-                    validator.validate(new StreamSource(new StringReader(APP_NEG_TEST)));
-                    fail("Expected to catch ParseException but didn't encounter any");
-                } catch (SAXParseException saxpe) {
-                    // Expected
-                } catch (Exception e) {
-                    fail("Expected to catch ParseException but an unexpected error happened " + e.getMessage());
-                }
-            }
-        };
-
-        testThread.start();
-        Thread.sleep(3000);
-        // Timeout if validation takes more than 3 seconds
-        testThread.interrupt();
-
-        if (testThread.isInterrupted()) {
-            throw new TimeoutException("the pattern validation took too long to complete");
-        }
+        Validator validator = wss.getSchema(SchemaName.WORKFLOW).newValidator();
+        validator.validate(new StreamSource(new StringReader(WF_4_MULTIPLE_JAVA_OPTS)));
     }
 
     public void testWfSchemaV2() throws Exception {
@@ -213,8 +199,8 @@ public class TestSchemaService extends XTestCase {
                 + "<controls> <timeout>10</timeout> <concurrency>2</concurrency> <execution>LIFO</execution> </controls> <datasets> <dataset name='a' frequency='${coord:days(7)}' initial-instance='2009-02-01T01:00Z' timezone='UTC'> <uri-template>file:///tmp/coord/workflows/${YEAR}/${DAY}</uri-template> </dataset> <dataset name='local_a' frequency='${coord:days(7)}' initial-instance='2009-02-01T01:00Z' timezone='UTC'> <uri-template>file:///tmp/coord/workflows/${YEAR}/${DAY}</uri-template> </dataset> </datasets> <input-events> <data-in name='A' dataset='a'> <instance>${coord:latest(0)}</instance> </data-in>  </input-events> <output-events> <data-out name='LOCAL_A' dataset='local_a'> <instance>${coord:current(-1)}</instance> </data-out> </output-events> <action> <workflow> <app-path>hdfs:///tmp/workflows/</app-path> <configuration> <property> <name>inputA</name> <value>${coord:dataIn('A')}</value> </property> <property> <name>inputB</name> <value>${coord:dataOut('LOCAL_A')}</value> </property></configuration> </workflow>  "
                 + "<sla:info> <sla:app-name>5</sla:app-name> <sla:nominal-time>2009-03-06T010:00Z</sla:nominal-time> "
                 + "<sla:should-start>5</sla:should-start> <sla:should-end>50</sla:should-end> "
-                + "<sla:alert-contact>abc@yahoo.com</sla:alert-contact> <sla:dev-contact>abc@yahoo.com</sla:dev-contact>"
-                + " <sla:qa-contact>abc@yahoo.com</sla:qa-contact> <sla:se-contact>abc@yahoo.com</sla:se-contact>"
+                + "<sla:alert-contact>abc@example.com</sla:alert-contact> <sla:dev-contact>abc@example.com</sla:dev-contact>"
+                + " <sla:qa-contact>abc@example.com</sla:qa-contact> <sla:se-contact>abc@example.com</sla:se-contact>"
                 + "</sla:info>" + "</action> </coordinator-app>";
 
         Element e = XmlUtils.parseXml(COORD_APP1);

@@ -18,8 +18,6 @@
 package org.apache.oozie.executor.jpa;
 
 import java.sql.Timestamp;
-import java.util.List;
-
 import javax.persistence.EntityManager;
 import javax.persistence.Query;
 
@@ -62,7 +60,7 @@ public class CoordActionGetForInputCheckJPAExecutor implements JPAExecutor<Coord
             return caBean;
         }
         catch (Exception e) {
-            throw new JPAExecutorException(ErrorCode.E0603, e);
+            throw new JPAExecutorException(ErrorCode.E0603, e.getMessage(), e);
         }
 
     }

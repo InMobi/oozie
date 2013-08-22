@@ -18,7 +18,6 @@
 package org.apache.oozie.command.coord;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -703,6 +702,32 @@ public class TestCoordRerunXCommand extends XDataTestCase {
         }
     }
 
+
+    /**
+     * Test : Rerun DONEWITHERROR coordinator job
+     *
+     * @throws Exception
+     */
+    public void testCoordRerunInDoneWithError() throws Exception {
+        Services.get().destroy();
+        setSystemProperty(StatusTransitService.CONF_BACKWARD_SUPPORT_FOR_STATES_WITHOUT_ERROR, "false");
+        services = new Services();
+        services.init();
+        CoordinatorJobBean job = this.addRecordToCoordJobTable(Job.Status.DONEWITHERROR, false, false);
+        addRecordToCoordActionTable(job.getId(), 1, CoordinatorAction.Status.FAILED, "coord-rerun-action1.xml", 0);
+
+        JPAService jpaService = Services.get().get(JPAService.class);
+        assertNotNull(jpaService);
+        CoordJobGetJPAExecutor coordJobGetExecutor = new CoordJobGetJPAExecutor(job.getId());
+        job = jpaService.execute(coordJobGetExecutor);
+        assertEquals(Job.Status.DONEWITHERROR, job.getStatus());
+
+        new CoordRerunXCommand(job.getId(), RestConstants.JOB_COORD_RERUN_DATE, "2009-12-15T01:00Z", false, true)
+                .call();
+        job = jpaService.execute(coordJobGetExecutor);
+        assertEquals(Job.Status.RUNNINGWITHERROR, job.getStatus());
+
+    }
     /**
      * Test : Rerun paused coordinator job
      *
@@ -725,6 +750,31 @@ public class TestCoordRerunXCommand extends XDataTestCase {
 
         job = jpaService.execute(coordJobGetExecutor);
         assertEquals(Job.Status.PAUSED, job.getStatus());
+        assertNotNull(job.getPauseTime());
+    }
+
+    /**
+     * Test : Rerun PAUSEDWITHERROR coordinator job
+     *
+     * @throws Exception
+     */
+    public void testCoordRerunInPausedWithError() throws Exception {
+        Date curr = new Date();
+        Date pauseTime = new Date(curr.getTime() - 1000);
+        CoordinatorJobBean job = this.addRecordToCoordJobTableWithPausedTime(Job.Status.PAUSEDWITHERROR, false, false, pauseTime);
+        addRecordToCoordActionTable(job.getId(), 1, CoordinatorAction.Status.FAILED, "coord-rerun-action1.xml", 0);
+
+        JPAService jpaService = Services.get().get(JPAService.class);
+        assertNotNull(jpaService);
+        CoordJobGetJPAExecutor coordJobGetExecutor = new CoordJobGetJPAExecutor(job.getId());
+        job = jpaService.execute(coordJobGetExecutor);
+        assertEquals(Job.Status.PAUSEDWITHERROR, job.getStatus());
+
+        new CoordRerunXCommand(job.getId(), RestConstants.JOB_COORD_RERUN_DATE, "2009-12-15T01:00Z", false, true)
+                .call();
+
+        job = jpaService.execute(coordJobGetExecutor);
+        assertEquals(Job.Status.PAUSEDWITHERROR, job.getStatus());
         assertNotNull(job.getPauseTime());
     }
 
@@ -784,10 +834,11 @@ public class TestCoordRerunXCommand extends XDataTestCase {
     public void testCoordRerunForBackwardSupport1() throws Exception {
         Services.get().destroy();
         setSystemProperty(StatusTransitService.CONF_BACKWARD_SUPPORT_FOR_COORD_STATUS, "true");
-        new Services().init();
+        services = new Services();
+        services.init();
 
-        Date start = DateUtils.parseDateUTC("2009-02-01T01:00Z");
-        Date end = DateUtils.parseDateUTC("2009-02-02T23:59Z");
+        Date start = DateUtils.parseDateOozieTZ("2009-02-01T01:00Z");
+        Date end = DateUtils.parseDateOozieTZ("2009-02-02T23:59Z");
         CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.SUCCEEDED, start, end, false,
                 true, 3);
 
@@ -832,10 +883,11 @@ public class TestCoordRerunXCommand extends XDataTestCase {
     public void testCoordRerunForBackwardSupport2() throws Exception {
         Services.get().destroy();
         setSystemProperty(StatusTransitService.CONF_BACKWARD_SUPPORT_FOR_COORD_STATUS, "true");
-        new Services().init();
+        services = new Services();
+        services.init();
 
-        Date start = DateUtils.parseDateUTC("2009-02-01T01:00Z");
-        Date end = DateUtils.parseDateUTC("2009-02-02T23:59Z");
+        Date start = DateUtils.parseDateOozieTZ("2009-02-01T01:00Z");
+        Date end = DateUtils.parseDateOozieTZ("2009-02-02T23:59Z");
         CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.SUSPENDED, start, end, false,
                 true, 3);
 
@@ -881,10 +933,11 @@ public class TestCoordRerunXCommand extends XDataTestCase {
     public void testCoordRerunForBackwardSupport3() throws Exception {
         Services.get().destroy();
         setSystemProperty(StatusTransitService.CONF_BACKWARD_SUPPORT_FOR_COORD_STATUS, "true");
-        new Services().init();
+        services = new Services();
+        services.init();
 
-        Date start = DateUtils.parseDateUTC("2009-02-01T01:00Z");
-        Date end = DateUtils.parseDateUTC("2009-02-02T23:59Z");
+        Date start = DateUtils.parseDateOozieTZ("2009-02-01T01:00Z");
+        Date end = DateUtils.parseDateOozieTZ("2009-02-02T23:59Z");
         CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.SUCCEEDED, start, end, false,
                 false, 3);
 
@@ -971,8 +1024,8 @@ public class TestCoordRerunXCommand extends XDataTestCase {
         coordJob.setExecution(Execution.FIFO);
         coordJob.setConcurrency(1);
         try {
-            coordJob.setStartTime(DateUtils.parseDateUTC("2009-12-15T01:00Z"));
-            coordJob.setEndTime(DateUtils.parseDateUTC("2009-12-17T01:00Z"));
+            coordJob.setStartTime(DateUtils.parseDateOozieTZ("2009-12-15T01:00Z"));
+            coordJob.setEndTime(DateUtils.parseDateOozieTZ("2009-12-17T01:00Z"));
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -1001,7 +1054,7 @@ public class TestCoordRerunXCommand extends XDataTestCase {
         action.setId(actionId);
         action.setActionNumber(actionNum);
         try {
-            action.setNominalTime(DateUtils.parseDateUTC(actionNomialTime));
+            action.setNominalTime(DateUtils.parseDateOozieTZ(actionNomialTime));
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -1046,13 +1099,6 @@ public class TestCoordRerunXCommand extends XDataTestCase {
         writeToFile(content, wfAppPath, "workflow.xml");
 
         return conf;
-    }
-
-    private void writeToFile(String content, Path appPath, String fileName) throws IOException {
-        FileSystem fs = getFileSystem();
-        Writer writer = new OutputStreamWriter(fs.create(new Path(appPath, fileName), true));
-        writer.write(content);
-        writer.close();
     }
 
     @SuppressWarnings("unchecked")

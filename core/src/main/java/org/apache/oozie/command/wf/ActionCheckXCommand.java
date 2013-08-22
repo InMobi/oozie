@@ -28,6 +28,7 @@ import org.apache.oozie.WorkflowJobBean;
 import org.apache.oozie.XException;
 import org.apache.oozie.action.ActionExecutor;
 import org.apache.oozie.action.ActionExecutorException;
+import org.apache.oozie.client.WorkflowAction;
 import org.apache.oozie.client.WorkflowJob;
 import org.apache.oozie.client.WorkflowAction.Status;
 import org.apache.oozie.client.rest.JsonBean;
@@ -38,6 +39,7 @@ import org.apache.oozie.executor.jpa.JPAExecutorException;
 import org.apache.oozie.executor.jpa.WorkflowActionGetJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowActionUpdateJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowJobGetJPAExecutor;
+import org.apache.oozie.service.ActionCheckerService;
 import org.apache.oozie.service.ActionService;
 import org.apache.oozie.service.JPAService;
 import org.apache.oozie.service.Services;
@@ -155,9 +157,16 @@ public class ActionCheckXCommand extends ActionXCommand<Void> {
     protected Void execute() throws CommandException {
         LOG.debug("STARTED ActionCheckXCommand for wf actionId=" + actionId + " priority =" + getPriority());
 
+        long retryInterval = Services.get().getConf().getLong(ActionCheckerService.CONF_ACTION_CHECK_INTERVAL, executor
+                .getRetryInterval());
+        executor.setRetryInterval(retryInterval);
+
         ActionExecutorContext context = null;
         try {
             boolean isRetry = false;
+            if (wfAction.getRetries() > 0) {
+                isRetry = true;
+            }
             boolean isUserRetry = false;
             context = new ActionXCommand.ActionExecutorContext(wfJob, wfAction, isRetry, isUserRetry);
             incrActionCounter(wfAction.getType(), 1);
@@ -198,6 +207,14 @@ public class ActionCheckXCommand extends ActionXCommand<Void> {
                 case ERROR:
                     handleUserRetry(wfAction);
                     break;
+                case TRANSIENT:                 // retry N times, then suspend workflow
+                    if (!handleTransient(context, executor, WorkflowAction.Status.RUNNING)) {
+                        handleNonTransient(context, executor, WorkflowAction.Status.START_MANUAL);
+                        wfAction.setPendingAge(new Date());
+                        wfAction.setRetries(0);
+                        wfAction.setStartTime(null);
+                    }
+                    break;
             }
             wfAction.setLastCheckTime(new Date());
             updateList = new ArrayList<JsonBean>();
@@ -227,4 +244,9 @@ public class ActionCheckXCommand extends ActionXCommand<Void> {
             InstrumentUtils.incrJobCounter(INSTR_FAILED_JOBS_COUNTER, 1, getInstrumentation());
         }
     }
+
+    protected long getRetryInterval() {
+        return (executor != null) ? executor.getRetryInterval() : ActionExecutor.RETRY_INTERVAL;
+    }
+
 }

@@ -21,7 +21,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.apache.oozie</groupId>
     <artifactId>oozie-main</artifactId>
-    <version>3.2.3</version>
+    <version>3.3.2.1-SNAPSHOT</version>
     <description>Apache Oozie Main</description>
     <name>Apache Oozie Main</name>
     <packaging>pom</packaging>
@@ -39,9 +39,11 @@
     </organization>
 
     <properties>
+        <distMgmtSnapshotsName>Apache Development Snapshot Repository</distMgmtSnapshotsName>
+        <distMgmtSnapshotsUrl>https://repository.apache.org/content/repositories/snapshots</distMgmtSnapshotsUrl>
+
         <!-- to be able to run a single test case from the main project -->
         <failIfNoTests>false</failIfNoTests>
-
 
         <test.timeout>3600</test.timeout>
 
@@ -64,41 +66,57 @@
         </oozie.test.default.config.file>
         <oozie.test.config.file>${oozie.test.default.config.file}</oozie.test.config.file>
 
-        <hadoop.version>1.0.1</hadoop.version>
+        <hadoop.version>1.1.1</hadoop.version>
+        <hbase.version>0.94.2</hbase.version>
+
+        <hadooplib.version>${hadoop.version}.oozie-${project.version}</hadooplib.version>
+        <hbaselib.version>${hbase.version}.oozie-${project.version}</hbaselib.version>
+
         <clover.license>/home/jenkins/tools/clover/latest/lib/clover.license</clover.license>
         <!--
         This is required while we support a a pre 0.23 version of Hadoop which does not have
         the hadoop-auth artifact. After we phase-out pre 0.23 we can get rid of this property.
         -->
-        <hadoop.auth.version>0.23.1</hadoop.auth.version>
+        <hadoop.auth.version>2.0.2-alpha</hadoop.auth.version>
 
          <!-- Sharelib component versions -->
          <hive.version>0.9.0</hive.version>
          <pig.version>0.9.0</pig.version>
          <sqoop.version>1.5.0-incubating-SNAPSHOT</sqoop.version>
          <streaming.version>${hadoop.version}</streaming.version>
-	<openjpa.version>2.2.2</openjpa.version>
+         <distcp.version>${hadooplib.version}</distcp.version>
+
+         <!-- Tomcat version -->
+         <tomcat.version>6.0.36</tomcat.version>
     </properties>
 
     <modules>
         <module>client</module>
         <module>hadooplibs</module>
+        <module>hbaselibs</module>
         <module>core</module>
+        <module>tests</module>
         <module>webapp</module>
         <module>examples</module>
         <module>docs</module>
         <module>sharelib</module>
         <module>tools</module>
+        <module>minitest</module>
         <module>distro</module>
     </modules>
 
-    <!--distributionManagement>
+    <distributionManagement>
         <repository>
-            <id>internal.maven.repo</id>
-            <name>Internal Repository for Integration</name>
-            <url>${internal.maven.repository}</url>
+          <id>apache.staging.https</id>
+          <name>Apache Release Distribution Repository</name>
+          <url>https://repository.apache.org/service/local/staging/deploy/maven2</url>
         </repository>
-    </distributionManagement-->
+        <snapshotRepository>
+          <id>apache.snapshots.https</id>
+          <name>${distMgmtSnapshotsName}</name>
+          <url>${distMgmtSnapshotsUrl}</url>
+        </snapshotRepository>
+    </distributionManagement>
 
     <repositories>
         <repository>
@@ -131,18 +149,9 @@
                 <enabled>false</enabled>
             </snapshots>
         </repository>
-
     </repositories>
 
     <pluginRepositories>
-        <pluginRepository>
-            <id>internal.maven.repo</id>
-            <name>Internal Repository for Integration</name>
-            <url>${internal.maven.repository}</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </pluginRepository>
         <pluginRepository>
             <id>repository.cloudera.com</id>
             <name>repository.cloudera.com-releases</name>
@@ -153,14 +162,15 @@
         </pluginRepository>
     </pluginRepositories>
 
+    <scm>
+        <connection>scm:git:git://github.com/InMobi/oozie.git</connection>
+        <developerConnection>scm:git:https://github.com/InMobi/oozie.git</developerConnection>
+        <url>scm:git:https://github.com/InMobi/oozie.git</url>
+        <tag>HEAD</tag>
+    </scm>
+
     <dependencyManagement>
         <dependencies>
-        <dependency>
-            <groupId>org.apache.oozie.extensions</groupId>
-            <artifactId>oozie-el-extensions</artifactId>
-            <version>0.1-SNAPSHOT</version>
-            <scope>compile</scope>
-        </dependency>
             <dependency>
                 <groupId>org.apache.oozie</groupId>
                 <artifactId>oozie-client</artifactId>
@@ -214,6 +224,11 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.oozie</groupId>
+                <artifactId>oozie-sharelib-distcp</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.oozie</groupId>
                 <artifactId>oozie-docs</artifactId>
                 <version>${project.version}</version>
                 <type>war</type>
@@ -247,7 +262,7 @@
             <dependency>
                 <groupId>junit</groupId>
                 <artifactId>junit</artifactId>
-                <version>3.8.1</version>
+                <version>4.10</version>
             </dependency>
 
             <dependency>
@@ -256,23 +271,35 @@
                 <version>1.0</version>
             </dependency>
 
+          <dependency>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-simple</artifactId>
+              <version>1.5.8</version>
+          </dependency>
+
             <!-- core -->
+             <dependency>
+                <groupId>org.apache.oozie</groupId>
+                <artifactId>oozie-hbase</artifactId>
+                <version>${hbaselib.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>org.apache.oozie</groupId>
                 <artifactId>oozie-hadoop</artifactId>
-                <version>${hadoop.version}</version>
+                <version>${hadooplib.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>org.apache.oozie</groupId>
                 <artifactId>oozie-hadoop-test</artifactId>
-                <version>${hadoop.version}</version>
+                <version>${hadooplib.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>org.apache.openjpa</groupId>
                 <artifactId>openjpa-persistence</artifactId>
-                <version>${openjpa.version}</version>
+                <version>2.1.0</version>
                 <exclusions>
                     <exclusion>
                         <groupId>junit</groupId>
@@ -290,7 +317,7 @@
             <dependency>
                 <groupId>org.apache.openjpa</groupId>
                 <artifactId>openjpa-jdbc</artifactId>
-                <version>${openjpa.version}</version>
+                <version>2.1.0</version>
                 <exclusions>
                     <exclusion>
                         <groupId>postgresql</groupId>
@@ -302,7 +329,7 @@
             <dependency>
                 <groupId>org.apache.openjpa</groupId>
                 <artifactId>openjpa-persistence-jdbc</artifactId>
-                <version>${openjpa.version}</version>
+                <version>2.1.0</version>
             </dependency>
 
             <dependency>
@@ -315,6 +342,12 @@
                 <groupId>org.apache.hadoop</groupId>
                 <artifactId>hadoop-streaming</artifactId>
                 <version>${streaming.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.oozie</groupId>
+                <artifactId>oozie-hadoop-distcp</artifactId>
+                <version>${distcp.version}</version>
             </dependency>
 
             <dependency>
@@ -580,7 +613,7 @@
             <dependency>
                 <groupId>org.python</groupId>
                 <artifactId>jython</artifactId>
-                <version>2.5.0</version>
+                <version>2.5.3</version>
             </dependency>
 
             <dependency>
@@ -592,7 +625,7 @@
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>r09</version>
+                <version>11.0.2</version>
             </dependency>
 
             <dependency>
@@ -604,7 +637,7 @@
             <dependency>
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
-                <version>1.4</version>
+                <version>2.1</version>
             </dependency>
 
             <dependency>
@@ -617,7 +650,7 @@
             <dependency>
                 <groupId>commons-httpclient</groupId>
                 <artifactId>commons-httpclient</artifactId>
-                <version>3.0.1</version>
+                <version>3.1</version>
             </dependency>
 
             <dependency>
@@ -631,7 +664,7 @@
 
     <build>
         <pluginManagement>
-            <plugins>
+            	<plugins>
 	            <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-enforcer-plugin</artifactId>
@@ -645,7 +678,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>2.7</version>
+                    <version>2.12</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -709,11 +742,6 @@
                     <artifactId>maven-dependency-plugin</artifactId>
                     <version>2.4</version>
                 </plugin>
-                <plugin>
-                    <groupId>org.apache.openjpa</groupId>
-                    <artifactId>openjpa-maven-plugin</artifactId>
-                    <version>${openjpa.version}</version>
-                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -736,6 +764,26 @@
                     <findbugsXmlWithMessages>true</findbugsXmlWithMessages>
                 </configuration>
             </plugin>
+
+            <!-- checkstyle plugin. Execute 'mvn verify' and look for checkstyle-result.xml under target folder -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>2.9.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <consoleOutput>true</consoleOutput>
+                            <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                            <configLocation>src/main/resources/checkstyle.xml</configLocation>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
@@ -809,11 +857,13 @@
                         -->
                         <exclude>**/TestSsh*.java</exclude>
 
-                        <!-- See 'testHive' profile in core/pom.xml and the Building doc-->
-                        <exclude>**/TestHive*.java</exclude>
-
                         <!-- See 'testSqoop' profile in core/pom.xml and the Building doc-->
                         <exclude>**/TestSqoop*.java</exclude>
+
+                        <!-- Explictly use -Dtest=TestMapReduceActionExecutorUberJar to test the uber jar functionality.
+                             Requires at least Hadoop 1.2.0 or 2.2.0.
+                        -->
+                        <exclude>**/TestMapReduceActionExecutorUberJar.java</exclude>
                     </excludes>
                     <!-- DO NOT CHANGE THIS VALUES, TESTCASES CANNOT RUN IN PARALLEL -->
                     <parallel>classes</parallel>
@@ -847,6 +897,8 @@
                         <exclude>webapp/src/main/resources/.gitignore</exclude>
                         <exclude>**/target/**</exclude>
                         <exclude>**/build/**</exclude>
+                        <exclude>.git/**</exclude>
+                        <exclude>test-patch/**</exclude>
                     </excludes>
                 </configuration>
             </plugin>
@@ -866,6 +918,48 @@
             <properties>
                 <oozie.test.forkMode>always</oozie.test.forkMode>
             </properties>
+        </profile>
+        <profile>
+            <id>testPatchCompile</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <fork>true</fork>
+                            <source>1.6</source>
+                            <target>1.6</target>
+                            <compilerArguments>
+                                <Xlint/>
+                                <Xmaxwarns>9999</Xmaxwarns>
+                            </compilerArguments>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>hadoop-3</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <properties>
+               <hadoop.version>3.0.0-SNAPSHOT</hadoop.version>
+               <hadoop.auth.version>3.0.0-SNAPSHOT</hadoop.auth.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>loginServerExample</id>
+            <activation>
+                <activeByDefault>false</activeByDefault>
+            </activation>
+            <modules>
+                <module>login</module>
+            </modules>
         </profile>
     </profiles>
 

@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -24,10 +24,13 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.security.token.delegation.DelegationTokenIdentifier;
+import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.security.token.Token;
 import org.apache.oozie.ErrorCode;
+import org.apache.oozie.action.hadoop.JavaActionExecutor;
 import org.apache.oozie.util.ParamChecker;
 import org.apache.oozie.util.XConfiguration;
 import org.apache.oozie.util.XLog;
@@ -54,6 +57,8 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class HadoopAccessorService implements Service {
 
+    private static XLog LOG = XLog.getLog(HadoopAccessorService.class);
+
     public static final String CONF_PREFIX = Service.CONF_PREFIX + "HadoopAccessorService.";
     public static final String JOB_TRACKER_WHITELIST = CONF_PREFIX + "jobTracker.whitelist";
     public static final String NAME_NODE_WHITELIST = CONF_PREFIX + "nameNode.whitelist";
@@ -62,8 +67,17 @@ public class HadoopAccessorService implements Service {
     public static final String KERBEROS_AUTH_ENABLED = CONF_PREFIX + "kerberos.enabled";
     public static final String KERBEROS_KEYTAB = CONF_PREFIX + "keytab.file";
     public static final String KERBEROS_PRINCIPAL = CONF_PREFIX + "kerberos.principal";
+    public static final Text MR_TOKEN_ALIAS = new Text("oozie mr token");
 
     private static final String OOZIE_HADOOP_ACCESSOR_SERVICE_CREATED = "oozie.HadoopAccessorService.created";
+    /** The Kerberos principal for the job tracker.*/
+    private static final String JT_PRINCIPAL = "mapreduce.jobtracker.kerberos.principal";
+    /** The Kerberos principal for the resource manager.*/
+    private static final String RM_PRINCIPAL = "yarn.resourcemanager.principal";
+    private static final String HADOOP_JOB_TRACKER = "mapred.job.tracker";
+    private static final String HADOOP_JOB_TRACKER_2 = "mapreduce.jobtracker.address";
+    private static final String HADOOP_YARN_RM = "yarn.resourcemanager.address";
+    private static final Map<String, Text> mrTokenRenewers = new HashMap<String, Text>();
 
     private Set<String> jobTrackerWhitelist = new HashSet<String>();
     private Set<String> nameNodeWhitelist = new HashSet<String>();
@@ -72,6 +86,12 @@ public class HadoopAccessorService implements Service {
     private Map<String, Map<String, XConfiguration>> actionConfigs = new HashMap<String, Map<String, XConfiguration>>();
 
     private ConcurrentMap<String, UserGroupInformation> userUgiMap;
+
+    /**
+     * Supported filesystem schemes for namespace federation
+     */
+    public static final String SUPPORTED_FILESYSTEMS = CONF_PREFIX + "supported.filesystems";
+    private Set<String> supportedSchemes;
 
     public void init(Services services) throws ServiceException {
         init(services.getConf());
@@ -115,6 +135,23 @@ public class HadoopAccessorService implements Service {
 
         loadHadoopConfigs(conf);
         preLoadActionConfigs(conf);
+
+        supportedSchemes = new HashSet<String>();
+        String[] schemesFromConf = conf.getStrings(SUPPORTED_FILESYSTEMS, new String[]{"hdfs","hftp","webhdfs"});
+        if(schemesFromConf != null) {
+            for (String scheme: schemesFromConf) {
+                scheme = scheme.trim();
+                // If user gives "*", supportedSchemes will be empty, so that checking is not done i.e. all schemes allowed
+                if(scheme.equals("*")) {
+                    if(schemesFromConf.length > 1) {
+                        throw new ServiceException(ErrorCode.E0100, getClass().getName(),
+                            SUPPORTED_FILESYSTEMS + " should contain either only wildcard or explicit list, not both");
+                    }
+                } else {
+                    supportedSchemes.add(scheme);
+                }
+            }
+        }
     }
 
     private void kerberosInit(Configuration serviceConf) throws ServiceException {
@@ -328,7 +365,7 @@ public class HadoopAccessorService implements Service {
         if (!conf.getBoolean(OOZIE_HADOOP_ACCESSOR_SERVICE_CREATED, false)) {
             throw new HadoopAccessorException(ErrorCode.E0903);
         }
-        String jobTracker = conf.get("mapred.job.tracker");
+        String jobTracker = conf.get(JavaActionExecutor.HADOOP_JOB_TRACKER);
         validateJobTracker(jobTracker);
         try {
             UserGroupInformation ugi = getUGI(user);
@@ -337,15 +374,15 @@ public class HadoopAccessorService implements Service {
                     return new JobClient(conf);
                 }
             });
-            Token<DelegationTokenIdentifier> mrdt = jobClient.getDelegationToken(new Text("mr token"));
-            conf.getCredentials().addToken(new Text("mr token"), mrdt);
+            Token<DelegationTokenIdentifier> mrdt = jobClient.getDelegationToken(getMRDelegationTokenRenewer(conf));
+            conf.getCredentials().addToken(MR_TOKEN_ALIAS, mrdt);
             return jobClient;
         }
         catch (InterruptedException ex) {
-            throw new HadoopAccessorException(ErrorCode.E0902, ex);
+            throw new HadoopAccessorException(ErrorCode.E0902, ex.getMessage(), ex);
         }
         catch (IOException ex) {
-            throw new HadoopAccessorException(ErrorCode.E0902, ex);
+            throw new HadoopAccessorException(ErrorCode.E0902, ex.getMessage(), ex);
         }
     }
 
@@ -364,6 +401,9 @@ public class HadoopAccessorService implements Service {
         if (!conf.getBoolean(OOZIE_HADOOP_ACCESSOR_SERVICE_CREATED, false)) {
             throw new HadoopAccessorException(ErrorCode.E0903);
         }
+
+        checkSupportedFilesystem(uri);
+
         String nameNode = uri.getAuthority();
         if (nameNode == null) {
             nameNode = conf.get("fs.default.name");
@@ -372,7 +412,7 @@ public class HadoopAccessorService implements Service {
                     nameNode = new URI(nameNode).getAuthority();
                 }
                 catch (URISyntaxException ex) {
-                    throw new HadoopAccessorException(ErrorCode.E0902, ex);
+                    throw new HadoopAccessorException(ErrorCode.E0902, ex.getMessage(), ex);
                 }
             }
         }
@@ -387,10 +427,10 @@ public class HadoopAccessorService implements Service {
             });
         }
         catch (InterruptedException ex) {
-            throw new HadoopAccessorException(ErrorCode.E0902, ex);
+            throw new HadoopAccessorException(ErrorCode.E0902, ex.getMessage(), ex);
         }
         catch (IOException ex) {
-            throw new HadoopAccessorException(ErrorCode.E0902, ex);
+            throw new HadoopAccessorException(ErrorCode.E0902, ex.getMessage(), ex);
         }
     }
 
@@ -421,6 +461,42 @@ public class HadoopAccessorService implements Service {
         }
     }
 
+    public static Text getMRDelegationTokenRenewer(JobConf jobConf) throws IOException {
+        if (UserGroupInformation.isSecurityEnabled()) { // secure cluster
+            return getMRTokenRenewerInternal(jobConf);
+        }
+        else {
+            return MR_TOKEN_ALIAS; //Doesn't matter what we pass as renewer
+        }
+    }
+
+    // Package private for unit test purposes
+    static Text getMRTokenRenewerInternal(JobConf jobConf) throws IOException {
+        // Getting renewer correctly for JT principal also though JT in hadoop 1.x does not have
+        // support for renewing/cancelling tokens
+        String servicePrincipal = jobConf.get(RM_PRINCIPAL, jobConf.get(JT_PRINCIPAL));
+        Text renewer;
+        if (servicePrincipal != null) { // secure cluster
+            renewer = mrTokenRenewers.get(servicePrincipal);
+            if (renewer == null) {
+                // Mimic org.apache.hadoop.mapred.Master.getMasterPrincipal()
+                String target = jobConf.get(HADOOP_YARN_RM, jobConf.get(HADOOP_JOB_TRACKER_2));
+                if (target == null) {
+                    target = jobConf.get(HADOOP_JOB_TRACKER);
+                }
+                String addr = NetUtils.createSocketAddr(target).getHostName();
+                renewer = new Text(SecurityUtil.getServerPrincipal(servicePrincipal, addr));
+                LOG.info("Delegation Token Renewer details: Principal=" + servicePrincipal + ",Target=" + target
+                        + ",Renewer=" + renewer);
+                mrTokenRenewers.put(servicePrincipal, renewer);
+            }
+        }
+        else {
+            renewer = MR_TOKEN_ALIAS; //Doesn't matter what we pass as renewer
+        }
+        return renewer;
+    }
+
     public void addFileToClassPath(String user, final Path file, final Configuration conf)
             throws IOException {
         ParamChecker.notEmpty(user, "user");
@@ -443,6 +519,23 @@ public class HadoopAccessorService implements Service {
             throw new IOException(ex);
         }
 
+    }
+
+    /**
+     * checks configuration parameter if filesystem scheme is among the list of supported ones
+     * this makes system robust to filesystems other than HDFS also
+     */
+
+    public void checkSupportedFilesystem(URI uri) throws HadoopAccessorException {
+        String uriScheme = uri.getScheme();
+        if (uriScheme != null) {    // skip the check if no scheme is given
+            if(!supportedSchemes.isEmpty()) {
+                XLog.getLog(this.getClass()).debug("Checking if filesystem " + uriScheme + " is supported");
+                if (!supportedSchemes.contains(uriScheme)) {
+                    throw new HadoopAccessorException(ErrorCode.E0904, uriScheme, uri.toString());
+                }
+            }
+        }
     }
 
 }

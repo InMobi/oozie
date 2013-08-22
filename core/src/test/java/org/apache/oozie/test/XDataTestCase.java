@@ -25,6 +25,7 @@ import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.regex.Matcher;
 
@@ -39,6 +40,7 @@ import org.apache.oozie.SLAEventBean;
 import org.apache.oozie.WorkflowActionBean;
 import org.apache.oozie.WorkflowJobBean;
 import org.apache.oozie.action.hadoop.MapperReducerForTest;
+import org.apache.oozie.client.BundleJob;
 import org.apache.oozie.client.CoordinatorAction;
 import org.apache.oozie.client.CoordinatorJob;
 import org.apache.oozie.client.Job;
@@ -57,6 +59,7 @@ import org.apache.oozie.executor.jpa.SLAEventInsertJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowActionInsertJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowJobInsertJPAExecutor;
 import org.apache.oozie.service.JPAService;
+import org.apache.oozie.service.LiteWorkflowStoreService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.service.UUIDService;
 import org.apache.oozie.service.WorkflowAppService;
@@ -79,14 +82,17 @@ import org.jdom.JDOMException;
 
 public abstract class XDataTestCase extends XFsTestCase {
 
-    protected static String slaXml = " <sla:info xmlns:sla='uri:oozie:sla:0.1'>" + " <sla:app-name>test-app</sla:app-name>"
-            + " <sla:nominal-time>2009-03-06T10:00Z</sla:nominal-time>" + " <sla:should-start>5</sla:should-start>"
-            + " <sla:should-end>120</sla:should-end>"
+    protected static String slaXml = " <sla:info xmlns:sla='uri:oozie:sla:0.1'>"
+            + " <sla:app-name>test-app</sla:app-name>" + " <sla:nominal-time>2009-03-06T10:00Z</sla:nominal-time>"
+            + " <sla:should-start>5</sla:should-start>" + " <sla:should-end>120</sla:should-end>"
             + " <sla:notification-msg>Notifying User for nominal time : 2009-03-06T10:00Z </sla:notification-msg>"
-            + " <sla:alert-contact>abc@yahoo.com</sla:alert-contact>"
-            + " <sla:dev-contact>abc@yahoo.com</sla:dev-contact>"
-            + " <sla:qa-contact>abc@yahoo.com</sla:qa-contact>" + " <sla:se-contact>abc@yahoo.com</sla:se-contact>"
+            + " <sla:alert-contact>abc@example.com</sla:alert-contact>"
+            + " <sla:dev-contact>abc@example.com</sla:dev-contact>"
+            + " <sla:qa-contact>abc@example.com</sla:qa-contact>" + " <sla:se-contact>abc@example.com</sla:se-contact>"
             + "</sla:info>";
+
+    protected String bundleName;
+    protected String CREATE_TIME = "2012-07-22T00:00Z";
 
     /**
      * Insert coord job for testing.
@@ -97,7 +103,8 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @return coord job bean
      * @throws Exception
      */
-    protected CoordinatorJobBean addRecordToCoordJobTable(CoordinatorJob.Status status, boolean pending, boolean doneMatd) throws Exception {
+    protected CoordinatorJobBean addRecordToCoordJobTable(CoordinatorJob.Status status, boolean pending,
+            boolean doneMatd) throws Exception {
         CoordinatorJobBean coordJob = createCoordJob(status, pending, doneMatd);
 
         try {
@@ -113,6 +120,25 @@ public abstract class XDataTestCase extends XFsTestCase {
         }
 
         return coordJob;
+    }
+
+    /**
+     * Inserts the passed coord job
+     * @param coord job bean
+     * @throws Exception
+     */
+    protected void addRecordToCoordJobTable(CoordinatorJobBean coordJob) throws Exception {
+        try {
+            JPAService jpaService = Services.get().get(JPAService.class);
+            assertNotNull(jpaService);
+            CoordJobInsertJPAExecutor coordInsertCmd = new CoordJobInsertJPAExecutor(coordJob);
+            jpaService.execute(coordInsertCmd);
+        }
+        catch (JPAExecutorException je) {
+            je.printStackTrace();
+            fail("Unable to insert the test coord job record to table");
+            throw je;
+        }
     }
 
     /**
@@ -160,8 +186,8 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @return coord job bean
      * @throws Exception
      */
-    protected CoordinatorJobBean addRecordToCoordJobTable(String testFileName, CoordinatorJob.Status status, Date start, Date end,
-            boolean pending, boolean doneMatd, int lastActionNum) throws Exception {
+    protected CoordinatorJobBean addRecordToCoordJobTable(String testFileName, CoordinatorJob.Status status,
+            Date start, Date end, boolean pending, boolean doneMatd, int lastActionNum) throws Exception {
         CoordinatorJobBean coordJob = createCoordJob(testFileName, status, start, end, pending, doneMatd, lastActionNum);
 
         try {
@@ -192,10 +218,49 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @return coordinator job bean
      * @throws Exception
      */
-    protected CoordinatorJobBean addRecordToCoordJobTableWithBundle(String bundleId, String coordId, CoordinatorJob.Status status, boolean pending, boolean doneMatd, int lastActionNumber) throws Exception {
+    protected CoordinatorJobBean addRecordToCoordJobTableWithBundle(String bundleId, String coordId,
+            CoordinatorJob.Status status, boolean pending, boolean doneMatd, int lastActionNumber) throws Exception {
         CoordinatorJobBean coordJob = createCoordJob(status, pending, doneMatd);
         coordJob.setBundleId(bundleId);
-        //coord id and coord name are the same
+        // coord id and coord name are the same
+        coordJob.setId(coordId);
+        coordJob.setAppName(coordId);
+        coordJob.setLastActionNumber(lastActionNumber);
+        try {
+            JPAService jpaService = Services.get().get(JPAService.class);
+            assertNotNull(jpaService);
+            CoordJobInsertJPAExecutor coordInsertCmd = new CoordJobInsertJPAExecutor(coordJob);
+            jpaService.execute(coordInsertCmd);
+        }
+        catch (JPAExecutorException je) {
+            je.printStackTrace();
+            fail("Unable to insert the test coord job record to table");
+            throw je;
+        }
+
+        return coordJob;
+    }
+
+    /**
+     * Add coordinator job bean with bundle id info.
+     *
+     * @param bundleId bundle id
+     * @param coordId coord id and coord name
+     * @param status job status
+     * @param start start time
+     * @param end end time
+     * @param pending true if pending is true
+     * @param doneMatd true if doneMaterialization is true
+     * @param lastActionNumber last action number
+     * @return coordinator job bean
+     * @throws Exception
+     */
+    protected CoordinatorJobBean addRecordToCoordJobTableWithBundle(String bundleId, String coordId,
+            CoordinatorJob.Status status, Date start, Date end, boolean pending, boolean doneMatd, int lastActionNumber)
+            throws Exception {
+        CoordinatorJobBean coordJob = createCoordJob(status, start, end, pending, doneMatd, 0);
+        coordJob.setBundleId(bundleId);
+        // coord id and coord name are the same
         coordJob.setId(coordId);
         coordJob.setAppName(coordId);
         coordJob.setLastActionNumber(lastActionNumber);
@@ -223,7 +288,8 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @return coord job bean
      * @throws IOException
      */
-    protected CoordinatorJobBean createCoordJob(CoordinatorJob.Status status, boolean pending, boolean doneMatd) throws Exception {
+    protected CoordinatorJobBean createCoordJob(CoordinatorJob.Status status, boolean pending, boolean doneMatd)
+            throws Exception {
         Path appPath = new Path(getFsTestCaseDir(), "coord");
         String appXml = writeCoordXml(appPath);
 
@@ -254,14 +320,12 @@ public abstract class XDataTestCase extends XFsTestCase {
         coordJob.setExecution(Execution.FIFO);
         coordJob.setConcurrency(1);
         coordJob.setMatThrottling(1);
-        try {
-            coordJob.setStartTime(DateUtils.parseDateUTC("2009-12-15T01:00Z"));
-            coordJob.setEndTime(DateUtils.parseDateUTC("2009-12-17T01:00Z"));
-        }
-        catch (Exception e) {
-            e.printStackTrace();
-            fail("Could not set Date/time");
-        }
+        // Set the start and end time in future
+        String currentDatePlusMonth = XDataTestCase.getCurrentDateafterIncrementingInMonths(1);
+        Date start = DateUtils.parseDateOozieTZ(currentDatePlusMonth);
+        Date end = DateUtils.parseDateOozieTZ(currentDatePlusMonth);
+        coordJob.setStartTime(start);
+        coordJob.setEndTime(end);
         return coordJob;
     }
 
@@ -333,8 +397,8 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @return coord job bean
      * @throws IOException
      */
-    protected CoordinatorJobBean createCoordJob(String testFileName, CoordinatorJob.Status status, Date start, Date end, boolean pending,
-            boolean doneMatd, int lastActionNum) throws Exception {
+    protected CoordinatorJobBean createCoordJob(String testFileName, CoordinatorJob.Status status, Date start,
+            Date end, boolean pending, boolean doneMatd, int lastActionNum) throws Exception {
         Path appPath = new Path(getFsTestCaseDir(), "coord");
         String appXml = writeCoordXml(appPath, testFileName);
 
@@ -375,7 +439,6 @@ public abstract class XDataTestCase extends XFsTestCase {
         }
         return coordJob;
     }
-
 
     /**
      * Write coordinator xml
@@ -418,7 +481,6 @@ public abstract class XDataTestCase extends XFsTestCase {
         IOUtils.copyCharStream(reader2, writer);
         return appXml;
     }
-
 
     /**
      * Write coordinator xml
@@ -477,7 +539,8 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @throws Exception thrown if unable to create coord action bean
      */
     protected CoordinatorActionBean addRecordToCoordActionTable(String jobId, int actionNum,
-            CoordinatorAction.Status status, String resourceXmlName, String wfId, String wfStatus, int pending) throws Exception {
+            CoordinatorAction.Status status, String resourceXmlName, String wfId, String wfStatus, int pending)
+            throws Exception {
         CoordinatorActionBean action = createCoordAction(jobId, actionNum, status, resourceXmlName, pending);
         action.setExternalId(wfId);
         action.setExternalStatus(wfStatus);
@@ -495,6 +558,11 @@ public abstract class XDataTestCase extends XFsTestCase {
         return action;
     }
 
+    protected CoordinatorActionBean createCoordAction(String jobId, int actionNum, CoordinatorAction.Status status,
+            String resourceXmlName, int pending) throws Exception {
+        return createCoordAction(jobId, actionNum, status, resourceXmlName, pending, "Z");
+    }
+
     /**
      * Create coord action bean
      *
@@ -507,11 +575,12 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @throws Exception thrown if unable to create coord action bean
      */
     protected CoordinatorActionBean createCoordAction(String jobId, int actionNum, CoordinatorAction.Status status,
-            String resourceXmlName, int pending) throws Exception {
+            String resourceXmlName, int pending, String oozieTimeZoneMask) throws Exception {
         String actionId = Services.get().get(UUIDService.class).generateChildId(jobId, actionNum + "");
         Path appPath = new Path(getFsTestCaseDir(), "coord");
         String actionXml = getCoordActionXml(appPath, resourceXmlName);
-        String actionNomialTime = getActionNominalTime(actionXml);
+        actionXml = actionXml.replace("${TZ}", oozieTimeZoneMask);
+        String actionNominalTime = getActionNominalTime(actionXml);
 
         CoordinatorActionBean action = new CoordinatorActionBean();
         action.setId(actionId);
@@ -520,7 +589,7 @@ public abstract class XDataTestCase extends XFsTestCase {
         action.setActionNumber(actionNum);
         action.setPending(pending);
         try {
-            action.setNominalTime(DateUtils.parseDateUTC(actionNomialTime));
+            action.setNominalTime(DateUtils.parseDateOozieTZ(actionNominalTime));
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -547,8 +616,9 @@ public abstract class XDataTestCase extends XFsTestCase {
      */
     protected WorkflowJobBean addRecordToWfJobTable(WorkflowJob.Status jobStatus, WorkflowInstance.Status instanceStatus)
             throws Exception {
-        WorkflowApp app = new LiteWorkflowApp("testApp", "<workflow-app/>", new StartNodeDef("end"))
-                .addNode(new EndNodeDef("end"));
+        WorkflowApp app = new LiteWorkflowApp("testApp", "<workflow-app/>", new StartNodeDef(
+                LiteWorkflowStoreService.LiteControlNodeHandler.class, "end")).addNode(new EndNodeDef("end",
+                LiteWorkflowStoreService.LiteControlNodeHandler.class));
         Configuration conf = new Configuration();
         Path appUri = new Path(getAppPath(), "workflow.xml");
         conf.set(OozieClient.APP_PATH, appUri.toString());
@@ -615,14 +685,26 @@ public abstract class XDataTestCase extends XFsTestCase {
      * @param status sla status
      * @throws Exception thrown if unable to create sla bean
      */
-    protected void addRecordToSLAEventTable(String slaId, SLAEvent.Status status) throws Exception {
+    protected void addRecordToSLAEventTable(String slaId, SLAEvent.Status status, Date today) throws Exception {
+        addRecordToSLAEventTable(slaId, "app-name", status, today);
+    }
+
+    /**
+     * Insert sla event for testing.
+     *
+     * @param slaId sla id
+     * @param slaId app name
+     * @param status sla status
+     * @throws Exception thrown if unable to create sla bean
+     */
+    protected void addRecordToSLAEventTable(String slaId, String appName, SLAEvent.Status status, Date today) throws Exception {
         SLAEventBean sla = new SLAEventBean();
         sla.setSlaId(slaId);
-        sla.setAppName("app-name");
-        sla.setParentClientId("parent-child-id");
+        sla.setAppName(appName);
+        sla.setParentClientId("parent-client-id");
         sla.setParentSlaId("parent-sla-id");
-        sla.setExpectedStart(new Date());
-        sla.setExpectedEnd(new Date());
+        sla.setExpectedStart(today);
+        sla.setExpectedEnd(today);
         sla.setNotificationMsg("notification-msg");
         sla.setAlertContact("alert-contact");
         sla.setDevContact("dev-contact");
@@ -635,7 +717,7 @@ public abstract class XDataTestCase extends XFsTestCase {
         sla.setUser(getTestUser());
         sla.setGroupName(getTestGroup());
         sla.setJobStatus(status);
-        sla.setStatusTimestamp(new Date());
+        sla.setStatusTimestamp(today);
 
         try {
             JPAService jpaService = Services.get().get(JPAService.class);
@@ -649,6 +731,8 @@ public abstract class XDataTestCase extends XFsTestCase {
             throw je;
         }
     }
+
+
 
     /**
      * Insert bundle job for testing.
@@ -784,8 +868,8 @@ public abstract class XDataTestCase extends XFsTestCase {
     protected String getCoordJobXml(Path appPath, Date start, Date end) {
         String startDateStr = null, endDateStr = null;
         try {
-            startDateStr = DateUtils.formatDateUTC(start);
-            endDateStr = DateUtils.formatDateUTC(end);
+            startDateStr = DateUtils.formatDateOozieTZ(start);
+            endDateStr = DateUtils.formatDateOozieTZ(end);
         }
         catch (Exception ex) {
             ex.printStackTrace();
@@ -868,7 +952,6 @@ public abstract class XDataTestCase extends XFsTestCase {
         jobConf.set("nameNode", getNameNodeUri());
         jobConf.set("wfAppPath", wfAppPath.toString());
 
-
         String content = "<workflow-app xmlns='uri:oozie:workflow:0.1'  xmlns:sla='uri:oozie:sla:0.1' name='no-op-wf'>";
         content += "<start to='end' />";
         content += "<end name='end' /></workflow-app>";
@@ -877,7 +960,7 @@ public abstract class XDataTestCase extends XFsTestCase {
         return jobConf;
     }
 
-    private void writeToFile(String content, Path appPath, String fileName) throws IOException {
+    protected void writeToFile(String content, Path appPath, String fileName) throws IOException {
         FileSystem fs = getFileSystem();
         Writer writer = new OutputStreamWriter(fs.create(new Path(appPath, fileName), true));
         writer.write(content);
@@ -1005,8 +1088,6 @@ public abstract class XDataTestCase extends XFsTestCase {
                 .replaceAll("#app_path1", coordPath1.toString() + File.separator + "coordinator.xml");
         bundleAppXml = bundleAppXml
                 .replaceAll("#app_path2", coordPath2.toString() + File.separator + "coordinator.xml");
-        // bundleAppXml = bundleAppXml.replaceAll("#app_path1", coordPath1.toString());
-        // bundleAppXml = bundleAppXml.replaceAll("#app_path2", coordPath2.toString());
 
         writeToFile(bundleAppXml, bundleAppPath, "bundle.xml");
 
@@ -1015,7 +1096,7 @@ public abstract class XDataTestCase extends XFsTestCase {
         conf.set(OozieClient.USER_NAME, getTestUser());
         conf.set("jobTracker", getJobTrackerUri());
         conf.set("nameNode", getNameNodeUri());
-
+        conf.set("appName", "bundle-app-name");
 
         BundleJobBean bundle = new BundleJobBean();
         bundle.setId(Services.get().get(UUIDService.class).generateId(ApplicationType.BUNDLE));
@@ -1033,7 +1114,8 @@ public abstract class XDataTestCase extends XFsTestCase {
         bundle.setOrigJobXml(bundleAppXml);
         if (pending) {
             bundle.setPending();
-        } else {
+        }
+        else {
             bundle.resetPending();
         }
         bundle.setStatus(jobStatus);
@@ -1071,7 +1153,6 @@ public abstract class XDataTestCase extends XFsTestCase {
         conf.set("jobTracker", getJobTrackerUri());
         conf.set("nameNode", getNameNodeUri());
 
-
         BundleJobBean bundle = new BundleJobBean();
         bundle.setId(Services.get().get(UUIDService.class).generateId(ApplicationType.BUNDLE));
         bundle.setAppName("BUNDLE-TEST");
@@ -1104,10 +1185,11 @@ public abstract class XDataTestCase extends XFsTestCase {
 
     /**
      * Inserts a record to coord action table
+     *
      * @param action the record to be inserted
      * @throws Exception
      */
-   protected void insertRecordCoordAction(CoordinatorActionBean action) throws Exception {
+    protected void insertRecordCoordAction(CoordinatorActionBean action) throws Exception {
         try {
             JPAService jpaService = Services.get().get(JPAService.class);
             assertNotNull(jpaService);
@@ -1119,6 +1201,92 @@ public abstract class XDataTestCase extends XFsTestCase {
             fail("Unable to insert the test coord action record to table");
             throw je;
         }
+    }
+
+    // Exclude some of the services classes from loading so they dont interfere
+    // while the test case is running
+    protected void setClassesToBeExcluded(Configuration conf, String[] excludedServices) {
+        String classes = conf.get(Services.CONF_SERVICE_CLASSES);
+        StringBuilder builder = new StringBuilder(classes);
+        for (String s : excludedServices) {
+            int index = builder.indexOf(s);
+            if (index != -1) {
+                builder.replace(index, index + s.length() + 1, "");
+            }
+        }
+        conf.set(Services.CONF_SERVICE_CLASSES, new String(builder));
+    }
+
+    /**
+     * Adds the db records for the Bulk Monitor tests
+     */
+    protected void addRecordsForBulkMonitor() throws Exception {
+        JPAService jpaService = Services.get().get(JPAService.class);
+        assertNotNull(jpaService);
+        // adding the bundle job
+        BundleJobBean bundle = addRecordToBundleJobTable(BundleJob.Status.RUNNING, false);
+        String bundleId = bundle.getId();
+        bundleName = bundle.getAppName();
+
+        // adding coordinator job(s) for this bundle
+        addRecordToCoordJobTableWithBundle(bundleId, "Coord1", CoordinatorJob.Status.RUNNING, true, true, 2);
+        addRecordToCoordJobTableWithBundle(bundleId, "Coord2", CoordinatorJob.Status.RUNNING, true, true, 1);
+        addRecordToCoordJobTableWithBundle(bundleId, "Coord3", CoordinatorJob.Status.RUNNING, true, true, 1);
+
+        // adding coordinator action #1 to Coord#1
+        CoordinatorActionBean action1 = new CoordinatorActionBean();
+        action1.setId("Coord1@1");
+        action1.setStatus(CoordinatorAction.Status.FAILED);
+        action1.setCreatedTime(DateUtils.parseDateUTC(CREATE_TIME));
+        action1.setJobId("Coord1");
+
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(DateUtils.parseDateUTC(CREATE_TIME));
+        cal.add(Calendar.DATE, -1);
+
+        action1.setNominalTime(cal.getTime());
+        CoordActionInsertJPAExecutor actionInsert = new CoordActionInsertJPAExecutor(action1);
+        jpaService.execute(actionInsert);
+
+        // adding coordinator action #2 to Coord#1
+        CoordinatorActionBean action2 = new CoordinatorActionBean();
+        action2.setId("Coord1@2");
+        action2.setStatus(CoordinatorAction.Status.KILLED);
+        action2.setCreatedTime(DateUtils.parseDateUTC(CREATE_TIME));
+        action2.setJobId("Coord1");
+
+        cal.setTime(DateUtils.parseDateUTC(CREATE_TIME));
+        cal.add(Calendar.DATE, -1);
+
+        action2.setNominalTime(cal.getTime());
+        actionInsert = new CoordActionInsertJPAExecutor(action2);
+        jpaService.execute(actionInsert);
+
+        // adding coordinator action #3 to Coord#2
+        CoordinatorActionBean action3 = new CoordinatorActionBean();
+        action3.setId("Coord2@1");
+        action3.setStatus(CoordinatorAction.Status.KILLED);
+        action3.setCreatedTime(DateUtils.parseDateUTC(CREATE_TIME));
+        action3.setJobId("Coord2");
+
+        cal.setTime(DateUtils.parseDateUTC(CREATE_TIME));
+        cal.add(Calendar.DATE, -1);
+
+        action3.setNominalTime(cal.getTime());
+        actionInsert = new CoordActionInsertJPAExecutor(action3);
+        jpaService.execute(actionInsert);
+    }
+
+    /**
+     * Add a month to the current time
+     *
+     * @param incrementMonth
+     * @return
+     */
+    protected static String getCurrentDateafterIncrementingInMonths(int incrementMonth) {
+        Calendar currentDate = Calendar.getInstance();
+        currentDate.set(Calendar.MONTH, currentDate.get(Calendar.MONTH) + incrementMonth);
+        return DateUtils.formatDateOozieTZ(currentDate);
     }
 
 }

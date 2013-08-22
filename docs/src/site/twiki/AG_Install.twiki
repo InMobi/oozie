@@ -46,6 +46,15 @@ is =http://${OOZIE_HTTP_HOSTNAME}:${OOZIE_HTTP_PORT}/oozie=.
 owner of the Oozie installation directory matches the user invoking the script. The default
 value is undefined and interpreted as a =false=.
 
+If Oozie is configured to use HTTPS (SSL), then the following environment variables are also used:
+
+*OOZIE_HTTPS_PORT* : The port Oozie server runs when using HTTPS. Default value =11443=.
+
+*OOZIE_HTTPS_KEYSTORE_FILE* : The location of the keystore file containing the certificate information.
+Default value =${HOME}/.keystore= (i.e. the home dir of the Oozie user).
+
+*OOZIE_HTTPS_KEYSTORE_PASS* : The password of the keystore file. Default value =password=.
+
 ---++ Oozie Server Setup
 
 The =oozie-setup.sh= script prepares the embedded Tomcat server to run Oozie.
@@ -54,11 +63,24 @@ The =oozie-setup.sh= script options are:
 
 <verbatim>
 Usage  : oozie-setup.sh <OPTIONS>"
-         [-extjs EXTJS_PATH] (expanded or ZIP, to enable the Oozie webconsole)"
-         [-hadoop HADOOP_VERSION HADOOP_PATH] (Hadoop version [0.20.1|0.20.2|0.20.104|0.20.200]"
-                                               and Hadoop install dir)"
-         [-jars JARS_PATH] (multiple JAR path separated by ':')"
-         (without options does default setup, without the Oozie webconsole)"
+         prepare-war [-hadoop HADOOP_VERSION HADOOP_PATH] [-extjs EXTJS_PATH] [-jars JARS_PATH] [-secure]"
+                     (prepare-war is to prepare war files for oozie)"
+                     (Hadoop version [0.20.1|0.20.2|0.20.104|0.20.200|0.23.x|2.x] and Hadoop install dir)"
+                     (EXTJS_PATH is expanded or ZIP, to enable the Oozie webconsole)"
+                     (JARS_PATH is multiple JAR path separated by ':')"
+                     (-secure will configure the war file to use HTTPS (SSL))"
+         sharelib create -fs FS_URI [-locallib SHARED_LIBRARY] (create sharelib for oozie,"
+                                                               FS_URI is the fs.default.name"
+                                                               for hdfs uri; SHARED_LIBRARY, path to the"
+                                                               Oozie sharelib to install, it can be a tarball"
+                                                               or an expanded version of it. If ommited,"
+                                                               the Oozie sharelib tarball from the Oozie"
+                                                               installation directory will be used)"
+                                                               (action failes if sharelib is already installed"
+                                                               in HDFS)"
+         sharelib upgrade -fs FS_URI [-locallib SHARED_LIBRARY] (upgrade existing sharelib, fails if there"
+                                                                 is no existing sharelib installed in HDFS)"
+         (without options prints usage information)"
 </verbatim>
 
 If a directory =libext/= is present in Oozie installation directory, the =oozie-setup.sh= script
@@ -83,6 +105,7 @@ The =addtowar.sh= script options are:
           [-hadoop HADOOP_VERSION HADOOP_PATH]
           [-extjs EXTJS_PATH]
           [-jars JARS_PATH] (multiple JAR path separated by ':')
+          [-secureWeb WEB_XML_PATH] (path to secure web.xml)
 </verbatim>
 
 The original =oozie.war= file is in the Oozie server installation directory.
@@ -344,17 +367,22 @@ Oozie security is set via the following configuration property (default value sh
   oozie.service.AuthorizationService.security.enabled=false
 </verbatim>
 
-If security is enabled, the admin users are read from the =conf/adminusers.txt= file:
-
-   * One user name per line
-   * Empty lines and lines starting with '#' are ignored
-
-NOTE: the old ACL model where a group was provided is still supported if the  following property is set
-in =oozie-stei.xml=:
+NOTE: the old ACL model where a group was provided is still supported if the following property is set
+in =oozie-site.xml=:
 
 <verbatim>
   oozie.service.AuthorizationService.default.group.as.acl=true
 </verbatim>
+
+Admin users are determined from the list of admin groups, specified in
+ =oozie.service.AuthorizationService.admin.groups= property. Use commas to separate multiple groups, spaces, tabs
+and ENTER characters are trimmed.
+
+If the above property for admin groups is not set, then the admin users are the users specified in the
+ =conf/adminusers.txt= file. The syntax of this file is:
+
+   * One user name per line
+   * Empty lines and lines starting with '#' are ignored
 
 ---+++ Oozie System ID Configuration
 
@@ -368,6 +396,107 @@ shown):
 <verbatim>
   oozie.system.id=oozie-${user.name}
 </verbatim>
+
+---+++ Filesystem Configuration
+
+Oozie lets you to configure the allowed Filesystems by using the following configuration property in oozie-site.xml:
+<verbatim>
+  <property>
+    <name>oozie.service.HadoopAccessorService.supported.filesystems</name>
+    <value>hdfs</value>
+  </property>
+</verbatim>
+
+The above value, =hdfs=, which is the default, means that Oozie will only allow HDFS filesystems to be used.  Examples of other
+filesystems that Oozie is compatible with are: hdfs, hftp, webhdfs, and viewfs.  Multiple filesystems can be specified as
+comma-separated values.  Putting a * will allow any filesystem type, effectively disabling this check.
+
+---+++ Setting Up Oozie with HTTPS (SSL)
+
+*IMPORTANT*:
+The default HTTPS configuration will cause all Oozie URLs to use HTTPS except for the JobTracker callback URLs. This is to simply
+configuration (no changes needed outside of Oozie), but this is okay because Oozie doesn't inherently trust the callbacks anyway;
+they are used as hints.
+
+The related environment variables are explained at [[AG_Install#Environment_Setup][Environment Setup]].
+
+You can use either a certificate from a Certificate Authority or a Self-Signed Certificate.  Using a self-signed certificate
+requires some additional configuration on each Oozie client machine.
+
+---++++To use a Self-Signed Certificate
+There are many ways to create a Self-Signed Certificate, this is just one way.  We will be using the keytool program, which is
+included with your JRE. If its not on your path, you should be able to find it in $JAVA_HOME/bin.
+
+1. Run the following command (as the Oozie user) to create a keystore file:
+<verbatim>
+keytool -genkey -alias tomcat -keyalg RSA
+</verbatim>
+The keystore file will be named =.keystore= and located in the Oozie user's home directory.
+
+2. Run the following command (as the Oozie user); you will be asked a series of questions in an interactive prompt.
+<verbatim>
+keytool -genkey -alias tomcat -keyalg RSA
+</verbatim>
+The password you enter for "keystore password" and "key password for <tomcat>" must be the same; Oozie is configued to use
+"password" by default. If you want to use a password other than "password", you will need to change the =OOZIE_HTTPS_KEYSTORE_PASS=
+environment variable.
+The answer to "What is your first and last name?" (i.e. "CN") must be the hostname of the machine where the Oozie Server will be
+running.
+
+3. Run the following command (as the Oozie user) to export a certificate file from the keystore file:
+<verbatim>
+keytool -exportcert -alias tomcat -file path/to/where/I/want/my/certificate.cert
+</verbatim>
+
+---++++To use a Certificate from a Certificate Authority
+
+1. You will need to make a request to a Certificate Authority in order to obtain a proper Certificate; please consult a Certificate
+Authority on this procedure.
+
+2. Once you have your .cert file, run the following command (as the Oozie user) to create a keystore file from your certificate:
+<verbatim>
+keytool -import -alias tomcat -file path/to/certificate.cert
+</verbatim>
+The keystore file will be named =.keystore= and located in the Oozie user's home directory.
+
+---++++Configure the Oozie Server to use SSL (HTTPS)
+
+1. Make sure the Oozie server isn't running
+
+2. Run the following command (as the Oozie user):
+<verbatim>
+oozie-setup.sh prepare-war -secure
+</verbatim>
+This will configure Oozie to use HTTPS instead of HTTP.  To revert back to HTTP, simply rerun the command without =-secure=.
+
+3. Start the Oozie server
+
+---++++Configure the Oozie Client to connect using SSL (HTTPS)
+
+The first two steps are only necessary if you are using a Self-Signed Certificate; the third is required either way.
+Also, these steps must be done on every machine where you intend to use the Oozie Client.
+
+1. Copy or download the .cert file onto the client machine
+
+2. Run the following command (as root) to import the certificate into the JRE's keystore. This will allow any Java program,
+including the Oozie client, to connect to the Oozie Server using your self-signed certificate.
+<verbatim>
+sudo keytool -import -alias tomcat -file path/to/certificate.cert -keystore ${JRE_cacerts}
+</verbatim>
+Where ${JRE_cacerts} is the path to the JRE's certs file.  It's location may differ depending on the Operating System, but its
+typically called cacerts and located at ${JAVA_HOME}/lib/security/cacerts but may be under a different directory in ${JAVA_HOME}
+(you may want to create a backup copy of this file first). The default password is =changeit=.
+
+3. When using the Oozie Client, you will need to use https://oozie.server.hostname:11443/oozie instead of
+http://oozie.server.hostname:11000/oozie -- Java will not automatically redirect from the http address to the https address.
+
+---++++Connect to the Oozie Web UI using SSL (HTTPS)
+
+1. Use https://oozie.server.hostname:11443/oozie
+though most browsers should automatically redirect you if you use http://oozie.server.hostname:11000/oozie
+
+*IMPORTANT*: If using a Self-Signed Certificate, your browser will warn you that it can't verify the certificate or something
+similar. You will probably have to add your certificate as an exception.
 
 ---+++ Fine Tuning an Oozie Server
 
@@ -391,6 +520,53 @@ streaming and pig actions.
 
 The bundled Streaming and Pig JARs are the ones used by Oozie testcases.
 
+---++ Oozie Coordinators/Bundles Processing Timezone
+
+By default Oozie runs coordinator and bundle jobs using =UTC= timezone for datetime values specified in the application
+XML and in the job parameter properties. This includes coordinator applications start and end times of jobs, coordinator
+datasets initial-instance, bundle applications kick-offtimes. In addition, coordinator dataset instance URI templates
+will be resolved using datetime values of the Oozie processing timezone.
+
+It is possible to set the Oozie processing timezone to a timezone that is an offset of UTC, alternate timezones must
+expressed in using a GMT offset ( =GMT+/-####= ). For example: =GMT+0530= (India timezone).
+
+To change the default =UTC= timezone, use the =oozie.processing.timezone= property in the =oozie-site.xml=. For example:
+
+<verbatim>
+<configuration>
+    <property>
+        <name>oozie.processing.timezone</name>
+        <value>GMT+0530</value>
+    </property>
+</configuration>
+</verbatim>
+
+*IMPORTANT:* If using a processing timezone other than =UTC=, all datetime values in coordinator and bundle jobs must
+be expressed in the corresponding timezone, for example =2012-08-08T12:42+0530=.
+
+*NOTE:* It is strongly encouraged to use =UTC=, the default Oozie processing timezone.
+
+For more details on using an alternate Oozie processing timezone, please reffer to the
+[[CoordinatorFunctionalSpec#datetime][Coordinator Fuctional Specification, section '4. Datetime']]
+
+#UberJar
+---++ MapReduce Workflow Uber Jars
+For Map-Reduce jobs (not including streaming or pipes), additional jar files can also be included via an uber jar. An uber jar is a
+jar file that contains additional jar files within a "lib" folder (see
+[[WorkflowFunctionalSpec#AppDeployment][Workflow Functional Specification]] for more information). Submitting a workflow with an uber jar
+requires at least Hadoop 2.2.0 or 1.2.0. As such, using uber jars in a workflow is disabled by default. To enable this feature, use
+the =oozie.action.mapreduce.uber.jar.enable= property in the =oozie-site.xml= (and make sure to use a supported version of Hadoop).
+
+<verbatim>
+<configuration>
+    <property>
+        <name>oozie.action.mapreduce.uber.jar.enable</name>
+        <value>true</value>
+    </property>
+</configuration>
+</verbatim>
+
+
 ---++ Advanced/Custom Environment Settings
 
 Oozie can be configured to use Unix standard filesystem hierarchy for its different files
@@ -402,7 +578,7 @@ This script is sourced before the configuration =oozie-env.sh= and supports addi
 environment variables (shown with their default values):
 
 <verbatim>
-export OOZIE_CONF=${OOZIE_HOME}/conf
+export OOZIE_CONFIG=${OOZIE_HOME}/conf
 export OOZIE_DATA={OOZIE_HOME}/data
 export OOZIE_LOG={OOZIE_HOME}/logs
 export CATALINA_BASE=${OOZIE_HOME}/oozie-server

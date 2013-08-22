@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -117,12 +117,12 @@ public class TestRecoveryService extends XDataTestCase {
         conf.set("running-mode", "async");
 
         //TODO CHECK, without this we get JPA concurrency exceptions, ODD
-        Thread.sleep(1000);
+        sleep(1000);
 
         final String jobId = engine.submitJob(conf, true);
 
         //TODO CHECK, without this we get JPA concurrency exceptions, ODD
-        Thread.sleep(1000);
+        sleep(1000);
 
         waitFor(5000, new Predicate() {
             public boolean evaluate() throws Exception {
@@ -130,11 +130,18 @@ public class TestRecoveryService extends XDataTestCase {
             }
         });
 
-        Thread.sleep(1000);
+        sleep(1000);
         final WorkflowStore store = Services.get().get(WorkflowStoreService.class).create();
         store.beginTrx();
         List<WorkflowActionBean> actions = store.getActionsForWorkflow(jobId, false);
-        WorkflowActionBean action = actions.get(0);
+        WorkflowActionBean action = null;
+        for (WorkflowActionBean bean : actions) {
+            if (bean.getType().equals("test")) {
+                action = bean;
+                break;
+            }
+        }
+        assertNotNull(action);
         final String actionId = action.getId();
         assertEquals(WorkflowActionBean.Status.RUNNING, action.getStatus());
         String actionConf = action.getConf();
@@ -147,7 +154,7 @@ public class TestRecoveryService extends XDataTestCase {
 
         Runnable recoveryRunnable = new RecoveryRunnable(0, 60, 60);
         recoveryRunnable.run();
-        Thread.sleep(3000);
+        sleep(3000);
 
         final WorkflowStore store2 = Services.get().get(WorkflowStoreService.class).create();
         assertEquals(WorkflowJob.Status.RUNNING, engine.getJob(jobId).getStatus());
@@ -160,9 +167,9 @@ public class TestRecoveryService extends XDataTestCase {
         store2.commitTrx();
         store2.closeTrx();
 
-        Thread.sleep(1000);
+        sleep(1000);
         recoveryRunnable.run();
-        Thread.sleep(3000);
+        sleep(3000);
 
         waitFor(10000, new Predicate() {
             public boolean evaluate() throws Exception {
@@ -193,13 +200,13 @@ public class TestRecoveryService extends XDataTestCase {
         
         Runnable recoveryRunnable = new RecoveryRunnable(0, 60, 60);
         recoveryRunnable.run();
-        Thread.sleep(3000);
+        sleep(3000);
         
         final WorkflowActionGetJPAExecutor wfActionGetCmd = new WorkflowActionGetJPAExecutor(action.getId());
 
         waitFor(5000, new Predicate() {
             public boolean evaluate() throws Exception {
-            	WorkflowActionBean a = jpaService.execute(wfActionGetCmd);
+                WorkflowActionBean a = jpaService.execute(wfActionGetCmd);
                 return a.getExternalId() != null;
             }
         });
@@ -254,7 +261,7 @@ public class TestRecoveryService extends XDataTestCase {
             store.closeTrx();
         }
 
-        Thread.sleep(3000);
+        sleep(3000);
         Runnable recoveryRunnable = new RecoveryRunnable(0, 1,1);
         recoveryRunnable.run();
 
@@ -287,8 +294,9 @@ public class TestRecoveryService extends XDataTestCase {
      */
     public void testCoordActionRecoveryServiceForWaiting() throws Exception {
 
-        Date startTime = DateUtils.parseDateUTC("2009-02-01T23:59Z");
-        Date endTime = DateUtils.parseDateUTC("2009-02-02T23:59Z");
+        String currentDatePlusMonth = XDataTestCase.getCurrentDateafterIncrementingInMonths(1);
+        Date startTime = DateUtils.parseDateOozieTZ(currentDatePlusMonth);
+        Date endTime = DateUtils.parseDateOozieTZ(currentDatePlusMonth);
         CoordinatorJobBean job = addRecordToCoordJobTableForWaiting("coord-job-for-action-input-check.xml",
                 CoordinatorJob.Status.RUNNING, startTime, endTime, false, true, 0);
 
@@ -300,7 +308,7 @@ public class TestRecoveryService extends XDataTestCase {
         createDir(getTestCaseDir() + "/2009/15/");
         createDir(getTestCaseDir() + "/2009/08/");
 
-        Thread.sleep(3000);
+        sleep(3000);
 
         Runnable recoveryRunnable = new RecoveryRunnable(0, 1, 1);
         recoveryRunnable.run();
@@ -332,15 +340,15 @@ public class TestRecoveryService extends XDataTestCase {
      */
     public void testCoordActionRecoveryServiceForSuspended() throws Exception {
 
-        Date start = DateUtils.parseDateUTC("2009-02-01T01:00Z");
-        Date end = DateUtils.parseDateUTC("2009-02-02T23:59Z");
+        Date start = DateUtils.parseDateOozieTZ("2009-02-01T01:00Z");
+        Date end = DateUtils.parseDateOozieTZ("2009-02-02T23:59Z");
         CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.SUSPENDED, start, end, false, false, 1);
         WorkflowJobBean wfJob = addRecordToWfJobTable(WorkflowJob.Status.RUNNING, WorkflowInstance.Status.RUNNING);
         final String wfJobId = wfJob.getId();
         addRecordToCoordActionTable(coordJob.getId(), 1,
                 CoordinatorAction.Status.SUSPENDED, "coord-action-get.xml", wfJobId, "RUNNING", 1);
 
-        Thread.sleep(3000);
+        sleep(3000);
 
         Runnable recoveryRunnable = new RecoveryRunnable(0, 1, 1);
         recoveryRunnable.run();
@@ -369,15 +377,15 @@ public class TestRecoveryService extends XDataTestCase {
      */
     public void testCoordActionRecoveryServiceForKilled() throws Exception {
 
-        Date start = DateUtils.parseDateUTC("2009-02-01T01:00Z");
-        Date end = DateUtils.parseDateUTC("2009-02-02T23:59Z");
+        Date start = DateUtils.parseDateOozieTZ("2009-02-01T01:00Z");
+        Date end = DateUtils.parseDateOozieTZ("2009-02-02T23:59Z");
         CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.KILLED, start, end, false, false, 1);
         WorkflowJobBean wfJob = addRecordToWfJobTable(WorkflowJob.Status.RUNNING, WorkflowInstance.Status.RUNNING);
         final String wfJobId = wfJob.getId();
         addRecordToCoordActionTable(coordJob.getId(), 1,
                 CoordinatorAction.Status.KILLED, "coord-action-get.xml", wfJobId, "RUNNING", 1);
 
-        Thread.sleep(3000);
+        sleep(3000);
 
         Runnable recoveryRunnable = new RecoveryRunnable(0, 1, 1);
         recoveryRunnable.run();
@@ -406,15 +414,13 @@ public class TestRecoveryService extends XDataTestCase {
      */
     public void testCoordActionRecoveryServiceForResume() throws Exception {
 
-        Date start = DateUtils.parseDateUTC("2009-02-01T01:00Z");
-        Date end = DateUtils.parseDateUTC("2009-02-02T23:59Z");
-        CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.RUNNING, start, end, false, false, 1);
+        CoordinatorJobBean coordJob = addRecordToCoordJobTable(CoordinatorJob.Status.RUNNING, false, false);
         WorkflowJobBean wfJob = addRecordToWfJobTable(WorkflowJob.Status.SUSPENDED, WorkflowInstance.Status.SUSPENDED);
         final String wfJobId = wfJob.getId();
         addRecordToCoordActionTable(coordJob.getId(), 1,
                 CoordinatorAction.Status.RUNNING, "coord-action-get.xml", wfJobId, "SUSPENDED", 1);
 
-        Thread.sleep(3000);
+        sleep(3000);
 
         Runnable recoveryRunnable = new RecoveryRunnable(0, 1, 1);
         recoveryRunnable.run();
@@ -675,8 +681,8 @@ public class TestRecoveryService extends XDataTestCase {
         coordJob.setExecution(Execution.FIFO);
         coordJob.setConcurrency(1);
         try {
-            coordJob.setEndTime(DateUtils.parseDateUTC("2009-02-03T23:59Z"));
-            coordJob.setStartTime(DateUtils.parseDateUTC("2009-02-01T23:59Z"));
+            coordJob.setEndTime(DateUtils.parseDateOozieTZ("2009-02-03T23:59Z"));
+            coordJob.setStartTime(DateUtils.parseDateOozieTZ("2009-02-01T23:59Z"));
         }
         catch (Exception e) {
             e.printStackTrace();

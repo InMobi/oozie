@@ -203,7 +203,7 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
             }
             catch (DagEngineException dee) {
                 errMsg = dee.getMessage();
-                errCode = "E1005";
+                errCode = dee.getErrorCode().toString();
                 log.warn("can not create DagEngine for submitting jobs", dee);
             }
             catch (CommandException ce) {
@@ -223,7 +223,7 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
             }
             finally {
                 if (makeFail == true) { // No DB exception occurs
-                    log.warn("Failing the action " + coordAction.getId() + ". Because " + errCode + " : " + errMsg);
+                    log.error("Failing the action " + coordAction.getId() + ". Because " + errCode + " : " + errMsg);
                     coordAction.setStatus(CoordinatorAction.Status.FAILED);
                     if (errMsg.length() > 254) { // Because table column size is 255
                         errMsg = errMsg.substring(0, 255);
@@ -288,7 +288,8 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
     @Override
     protected void verifyPrecondition() throws PreconditionException {
         if (coordAction.getStatus() != CoordinatorAction.Status.SUBMITTED) {
-            throw new PreconditionException(ErrorCode.E1100);
+            throw new PreconditionException(ErrorCode.E1100, "The coord action [" + actionId + "] must have status "
+                    + CoordinatorAction.Status.SUBMITTED.name() + " but has status [" + coordAction.getStatus().name() + "]");
         }
     }
 }

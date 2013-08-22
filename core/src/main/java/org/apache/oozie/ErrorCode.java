@@ -40,7 +40,7 @@ public enum ErrorCode {
 
     E0100(XLog.OPS, "Could not initialize service [{0}], {1}"),
     E0101(XLog.OPS, "Service [{0}] does not implement declared interface [{1}]"),
-    E0102(XLog.OPS, "Could not instanciate service class [{0}], {1}"),
+    E0102(XLog.OPS, "Could not instantiate service class [{0}], {1}"),
     E0103(XLog.OPS, "Could not load service classes, {0}"),
     E0110(XLog.OPS, "Could not parse or validate EL definition [{0}], {1}"),
     E0111(XLog.OPS, "class#method not found [{0}#{1}]"),
@@ -68,11 +68,11 @@ public enum ErrorCode {
     E0308(XLog.STD, "Could not parse date range parameter [{0}]"),
 
 
-    E0400(XLog.STD, "User mismatch, request user [{0}] configuration user [{1}]"),
     E0401(XLog.STD, "Missing configuration property [{0}]"),
     E0402(XLog.STD, "Invalid callback ID [{0}]"),
     E0403(XLog.STD, "Invalid callback data, {0}"),
     E0404(XLog.STD, "Only one of the properties are allowed [{0}]"),
+    E0405(XLog.STD, "Submission request doesn't have any application or lib path"),
 
     E0420(XLog.STD, "Invalid jobs filter [{0}], {1}"),
     E0421(XLog.STD, "Invalid job filter [{0}], {1}"),
@@ -95,7 +95,7 @@ public enum ErrorCode {
     E0600(XLog.OPS, "Could not get connection, {0}"),
     E0601(XLog.OPS, "Could not close connection, {0}"),
     E0602(XLog.OPS, "Could not commit connection, {0}"),
-    E0603(XLog.OPS, "SQL error in operation [{0}], {1}"),
+    E0603(XLog.OPS, "SQL error in operation, {0}"),
     E0604(XLog.STD, "Job does not exist [{0}]"),
     E0605(XLog.STD, "Action does not exist [{0}]"),
     E0606(XLog.STD, "Could not get lock [{0}], timed out [{1}]ms"),
@@ -103,6 +103,7 @@ public enum ErrorCode {
     E0608(XLog.OPS, "JDBC setup error [{0}], {1}"),
     E0609(XLog.OPS, "Missing [{0}] ORM file [{1}]"),
     E0610(XLog.OPS, "Missing JPAService, StoreService cannot run without a JPAService"),
+    E0611(XLog.OPS, "SQL error in operation [{0}], {1}"),
 
     E0700(XLog.STD, "XML error, {0}"),
     E0701(XLog.STD, "XML schema error, {0}"),
@@ -136,11 +137,18 @@ public enum ErrorCode {
     E0729(XLog.OPS, "Kill node message [{0}]"),
     E0730(XLog.STD, "Fork/Join not in pair"),
     E0731(XLog.STD, "Fork node [{0}] cannot have less than two paths"),
-    E0732(XLog.STD, "Fork [{0}]/Join [{1}] not in pair"),
+    E0732(XLog.STD, "Fork [{0}]/Join [{1}] not in pair (join should have been [{2}])"),
     E0733(XLog.STD, "Fork [{0}] without a join"),
     E0734(XLog.STD, "Invalid transition from node [{0}] to node [{1}] while using fork/join"),
     E0735(XLog.STD, "There was an invalid \"error to\" transition to node [{1}] while using fork/join"),
-    E0736(XLog.STD, "Workflow definition lenght [{0}] exceeded maximum allowed length [{1}]"),
+    E0736(XLog.STD, "Workflow definition length [{0}] exceeded maximum allowed length [{1}]"),
+    E0737(XLog.STD, "Invalid transition from node [{0}] to node [{1}] -- nodes of type 'end' are not allowed within Fork/Join"),
+    E0738(XLog.STD, "The following {0} parameters are required but were not defined and no default values are available: {1}"),
+    E0739(XLog.STD, "Parameter name cannot be empty"),
+    E0740(XLog.STD, "Invalid node type encountered (node [{0}])"),
+    E0741(XLog.STD, "Cycle detected transitioning to [{0}] via path {1}"),
+    E0742(XLog.STD, "No Fork for Join [{0}] to pair with"),
+    E0743(XLog.STD, "Multiple \"ok to\" transitions to the same node, [{0}], are not allowed"),
 
     E0800(XLog.STD, "Action it is not running its in [{1}] state, action [{0}]"),
     E0801(XLog.STD, "Workflow already running, workflow [{0}]"),
@@ -168,11 +176,12 @@ public enum ErrorCode {
     E0901(XLog.OPS, "Namenode [{0}] not allowed, not in Oozie's whitelist"),
     E0902(XLog.OPS, "Exception occured: [{0}]"),
     E0903(XLog.OPS, "Invalid JobConf, it has not been created by HadoopAccessorService"),
+    E0904(XLog.STD, "Scheme [{0}] not supported in uri [{1}]"),
 
     E1001(XLog.STD, "Could not read the coordinator job definition, {0}"),
     E1002(XLog.STD, "Invalid coordinator application URI [{0}], {1}"),
-    E1003(XLog.STD, "Invalid coordinator application attributes [{0}], {1}"),
-    E1004(XLog.STD, "Expression language evaluation error [{0}], {1}"),
+    E1003(XLog.STD, "Invalid coordinator application attributes, {0}"),
+    E1004(XLog.STD, "Expression language evaluation error, {0}"),
     E1005(XLog.STD, "Could not read the coordinator job configuration read from DB, {0}"),
     E1006(XLog.STD, "Invalid coordinator application [{0}], {1}"),
     E1007(XLog.STD, "Unable to add record to SLA table. [{0}], {1}"),
@@ -191,7 +200,7 @@ public enum ErrorCode {
     E1020(XLog.STD, "Could not kill coord job, this job either finished successfully or does not exist , [{0}]"),
     E1021(XLog.STD, "Coord Action Input Check Error: {0}"),
     E1022(XLog.STD, "Cannot delete running/completed coordinator action: [{0}]"),
-    
+
     E1100(XLog.STD, "Command precondition does not hold before execution, [{0}]"),
 
     E1101(XLog.STD, "SLA Nominal time is required."),

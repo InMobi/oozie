@@ -123,10 +123,10 @@ public abstract class ActionXCommand<T> extends WorkflowXCommand<Void> {
         action.resetPendingOnly();
         LOG.warn("Suspending Workflow Job id=" + id);
         try {
-            SuspendXCommand.suspendJob(Services.get().get(JPAService.class), workflow, id, action.getId());
+            SuspendXCommand.suspendJob(Services.get().get(JPAService.class), workflow, id, action.getId(), null);
         }
         catch (Exception e) {
-            throw new CommandException(ErrorCode.E0727, e.getMessage());
+            throw new CommandException(ErrorCode.E0727, id, e.getMessage());
         }
         finally {
             // update coordinator action

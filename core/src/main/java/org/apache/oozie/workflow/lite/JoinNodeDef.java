@@ -17,21 +17,23 @@
  */
 package org.apache.oozie.workflow.lite;
 
-import org.apache.oozie.workflow.WorkflowException;
-import org.apache.oozie.ErrorCode;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-//TODO javadoc
-public class JoinNodeDef extends NodeDef {
+import org.apache.oozie.ErrorCode;
+import org.apache.oozie.workflow.WorkflowException;
+
+/**
+ * Node definition for JOIN control node.
+ */
+public class JoinNodeDef extends ControlNodeDef {
 
     JoinNodeDef() {
     }
 
-    public JoinNodeDef(String name, String transition) {
-        super(name, null, JoinNodeHandler.class, Arrays.asList(transition));
+    public JoinNodeDef(String name, Class<? extends ControlNodeHandler> klass, String transition) {
+        super(name, "", klass, Arrays.asList(transition));
     }
 
     public static class JoinNodeHandler extends NodeHandler {
@@ -42,7 +44,7 @@ public class JoinNodeDef extends NodeDef {
                 throw new WorkflowException(ErrorCode.E0709, context.getNodeDef().getName());
             }
             String parentExecutionPath = context.getParentExecutionPath(context.getExecutionPath());
-            String forkCount = context.getVar(ForkNodeDef.FORK_COUNT_PREFIX + parentExecutionPath);
+            String forkCount = context.getVar(ControlNodeHandler.FORK_COUNT_PREFIX + parentExecutionPath);
             if (forkCount == null) {
                 throw new WorkflowException(ErrorCode.E0720, context.getNodeDef().getName());
             }
@@ -54,17 +56,17 @@ public class JoinNodeDef extends NodeDef {
 
         public boolean enter(Context context) throws WorkflowException {
             String parentExecutionPath = context.getParentExecutionPath(context.getExecutionPath());
-            String forkCount = context.getVar(ForkNodeDef.FORK_COUNT_PREFIX + parentExecutionPath);
+            String forkCount = context.getVar(ControlNodeHandler.FORK_COUNT_PREFIX + parentExecutionPath);
             if (forkCount == null) {
                 throw new WorkflowException(ErrorCode.E0720, context.getNodeDef().getName());
             }
             int count = Integer.parseInt(forkCount) - 1;
             if (count > 0) {
-                context.setVar(ForkNodeDef.FORK_COUNT_PREFIX + parentExecutionPath, "" + count);
+                context.setVar(ControlNodeHandler.FORK_COUNT_PREFIX + parentExecutionPath, "" + count);
                 context.deleteExecutionPath();
             }
             else {
-                context.setVar(ForkNodeDef.FORK_COUNT_PREFIX + parentExecutionPath, null);
+                context.setVar(ControlNodeHandler.FORK_COUNT_PREFIX + parentExecutionPath, null);
             }
             return (count == 0);
         }
@@ -91,5 +93,4 @@ public class JoinNodeDef extends NodeDef {
         public void fail(Context context) {
         }
     }
-
 }

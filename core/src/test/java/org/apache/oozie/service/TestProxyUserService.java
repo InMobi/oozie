@@ -58,6 +58,9 @@ public class TestProxyUserService extends XTestCase {
         catch (Exception ex) {
             fail();
         }
+        finally {
+            services.destroy();
+        }
     }
 
     public void testWrongHost() throws Exception {
@@ -76,6 +79,9 @@ public class TestProxyUserService extends XTestCase {
         catch (Exception ex) {
             fail();
         }
+        finally {
+            services.destroy();
+        }
     }
 
     public void testWrongConfigHosts() throws Exception {
@@ -92,6 +98,9 @@ public class TestProxyUserService extends XTestCase {
         }
         catch (Exception ex) {
             fail();
+        }
+        finally {
+            services.destroy();
         }
     }
 
@@ -222,7 +231,7 @@ public class TestProxyUserService extends XTestCase {
         try {
             ProxyUserService proxyUser = services.get(ProxyUserService.class);
             Assert.assertNotNull(proxyUser);
-            proxyUser.validate("foo", "www.yahoo.com", "bar");
+            proxyUser.validate("foo", "www.example.com", "bar");
             fail();
         }
         catch (AccessControlException ex) {
@@ -261,5 +270,52 @@ public class TestProxyUserService extends XTestCase {
         }
     }
 
+    public void testNullProxyUser() throws Exception {
+        Services services = new Services();
+        Configuration conf = services.getConf();
+        conf.set(Services.CONF_SERVICE_CLASSES, StringUtils.join(",", Arrays.asList(GroupsService.class.getName(),
+                                                                                    ProxyUserService.class.getName())));
+        services.init();
+        try {
+            ProxyUserService proxyUser = services.get(ProxyUserService.class);
+            Assert.assertNotNull(proxyUser);
+            proxyUser.validate(null, "localhost", "bar");
+            fail();
+        }
+        catch (IllegalArgumentException ex) {
+            assertTrue(ex.getMessage().contains("oozie.service.ProxyUserService.proxyuser.#USER#.hosts"));
+            assertTrue(ex.getMessage().contains("oozie.service.ProxyUserService.proxyuser.#USER#.groups"));
+        }
+        catch (Exception ex) {
+            fail(ex.toString());
+        }
+        finally {
+            services.destroy();
+        }
+    }
+
+    public void testNullHost() throws Exception {
+        Services services = new Services();
+        Configuration conf = services.getConf();
+        conf.set(Services.CONF_SERVICE_CLASSES, StringUtils.join(",", Arrays.asList(GroupsService.class.getName(),
+                                                                                    ProxyUserService.class.getName())));
+        services.init();
+        try {
+            ProxyUserService proxyUser = services.get(ProxyUserService.class);
+            Assert.assertNotNull(proxyUser);
+            proxyUser.validate("foo", null, "bar");
+            fail();
+        }
+        catch (IllegalArgumentException ex) {
+            assertTrue(ex.getMessage().contains("oozie.service.ProxyUserService.proxyuser.foo.hosts"));
+            assertTrue(ex.getMessage().contains("oozie.service.ProxyUserService.proxyuser.foo.groups"));
+        }
+        catch (Exception ex) {
+            fail(ex.toString());
+        }
+        finally {
+            services.destroy();
+        }
+    }
 }
 

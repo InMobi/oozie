@@ -80,7 +80,7 @@ public class TestHiveMain extends MainTestCase {
             w.close();
 
             XConfiguration jobConf = new XConfiguration();
-            jobConf.set("mapreduce.framework.name", "yarn");
+            XConfiguration.copy(createJobConf(), jobConf);
 
             jobConf.set("oozie.hive.log.level", "DEBUG");
 
@@ -89,8 +89,6 @@ public class TestHiveMain extends MainTestCase {
             jobConf.setInt("mapred.map.tasks", 1);
             jobConf.setInt("mapred.map.max.attempts", 1);
             jobConf.setInt("mapred.reduce.max.attempts", 1);
-            jobConf.set("mapred.job.tracker", getJobTrackerUri());
-            jobConf.set("fs.default.name", getNameNodeUri());
             jobConf.set("javax.jdo.option.ConnectionURL", "jdbc:derby:" + getTestCaseDir() + "/db;create=true");
             jobConf.set("javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver");
             jobConf.set("javax.jdo.option.ConnectionUserName", "sa");
@@ -111,10 +109,6 @@ public class TestHiveMain extends MainTestCase {
             File classPathDir = new File(url.getPath()).getParentFile();
             assertTrue(classPathDir.exists());
             File hiveSite = new File(classPathDir, "hive-site.xml");
-
-            InputStream is = IOUtils.getResourceAsStream("user-hive-default.xml", -1);
-            os = new FileOutputStream(new File(classPathDir, "hive-default.xml"));
-            IOUtils.copyStream(is, os);
 
             File outputDataFile = new File(getTestCaseDir(), "outputdata.properties");
 

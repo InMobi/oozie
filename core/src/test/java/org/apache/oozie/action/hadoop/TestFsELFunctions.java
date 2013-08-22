@@ -27,6 +27,7 @@ import org.apache.oozie.client.OozieClient;
 import org.apache.oozie.WorkflowActionBean;
 import org.apache.oozie.DagELFunctions;
 import org.apache.oozie.WorkflowJobBean;
+import org.apache.oozie.service.LiteWorkflowStoreService;
 import org.apache.oozie.workflow.lite.EndNodeDef;
 import org.apache.oozie.workflow.lite.LiteWorkflowApp;
 import org.apache.oozie.workflow.lite.LiteWorkflowInstance;
@@ -39,10 +40,19 @@ import org.apache.oozie.util.XConfiguration;
 
 public class TestFsELFunctions extends XFsTestCase {
 
-    public void testFunctions() throws Exception {
-        Services services = new Services();
-        services.init();
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        new Services().init();
+    }
 
+    @Override
+    protected void tearDown() throws Exception {
+        Services.get().destroy();
+        super.tearDown();
+    }
+
+    public void testFunctions() throws Exception {
         String file1 = new Path(getFsTestCaseDir(), "file1").toString();
         String file2 = new Path(getFsTestCaseDir(), "file2").toString();
         String dir = new Path(getFsTestCaseDir(), "dir").toString();
@@ -74,7 +84,9 @@ public class TestFsELFunctions extends XFsTestCase {
         conf.set("dir", dir);
 
         LiteWorkflowApp def =
-                new LiteWorkflowApp("name", "<workflow-app/>", new StartNodeDef("end")).addNode(new EndNodeDef("end"));
+                new LiteWorkflowApp("name", "<workflow-app/>",
+                                    new StartNodeDef(LiteWorkflowStoreService.LiteControlNodeHandler.class, "end")).
+                    addNode(new EndNodeDef("end", LiteWorkflowStoreService.LiteControlNodeHandler.class));
         LiteWorkflowInstance job = new LiteWorkflowInstance(def, conf, "wfId");
 
         WorkflowJobBean wf = new WorkflowJobBean();

@@ -110,6 +110,8 @@ public class BulkUpdateInsertForCoordActionStartJPAExecutor implements JPAExecut
                         q.setParameter("runConf", action.getRunConf());
                         q.setParameter("externalId", action.getExternalId());
                         q.setParameter("pending", action.getPending());
+                        q.setParameter("errorCode", action.getErrorCode());
+                        q.setParameter("errorMessage", action.getErrorMessage());
                         q.executeUpdate();
                     }
                     else {
@@ -121,7 +123,7 @@ public class BulkUpdateInsertForCoordActionStartJPAExecutor implements JPAExecut
             return null;
         }
         catch (Exception e) {
-            throw new JPAExecutorException(ErrorCode.E0603, e);
+            throw new JPAExecutorException(ErrorCode.E0603, e.getMessage(), e);
         }
     }
 }

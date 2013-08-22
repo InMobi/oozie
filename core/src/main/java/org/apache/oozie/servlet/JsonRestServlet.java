@@ -39,11 +39,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.security.AccessControlException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -282,6 +278,11 @@ public abstract class JsonRestServlet extends HttpServlet {
             String user = getUser(request);
             TOTAL_REQUESTS_SAMPLER_COUNTER.incrementAndGet();
             samplerCounter.incrementAndGet();
+            //If trace is enabled then display the request headers
+            XLog log = XLog.getLog(getClass());
+            if (log.isTraceEnabled()){
+             logHeaderInfo(request);
+            }
             super.service(request, response);
         }
         catch (XServletException ex) {
@@ -323,6 +324,20 @@ public abstract class JsonRestServlet extends HttpServlet {
         }
     }
 
+    private void logHeaderInfo(HttpServletRequest request){
+        XLog log = XLog.getLog(getClass());
+        StringBuilder traceInfo = new StringBuilder(4096);
+            //Display request URL and request.getHeaderNames();
+            Enumeration<String> names = (Enumeration<String>) request.getHeaderNames();
+            traceInfo.append("Request URL: ").append(getRequestUrl(request)).append("\nRequest Headers:\n");
+            while (names.hasMoreElements()) {
+                String name = names.nextElement();
+                String value = request.getHeader(name);
+                traceInfo.append(name).append(" : ").append(value).append("\n");
+            }
+            log.trace(traceInfo);
+    }
+
     private String getRequestUrl(HttpServletRequest request) {
         StringBuffer url = request.getRequestURL();
         if (request.getQueryString() != null) {
@@ -337,11 +352,13 @@ public abstract class JsonRestServlet extends HttpServlet {
      * @param response servlet response.
      * @param statusCode HTTP status code.
      * @param bean bean to send as JSON response.
+     * @param timeZoneId time zone to use for dates in the JSON response.
      * @throws java.io.IOException thrown if the bean could not be serialized to the response output stream.
      */
-    protected void sendJsonResponse(HttpServletResponse response, int statusCode, JsonBean bean) throws IOException {
+    protected void sendJsonResponse(HttpServletResponse response, int statusCode, JsonBean bean, String timeZoneId) 
+            throws IOException {
         response.setStatus(statusCode);
-        JSONObject json = bean.toJSONObject();
+        JSONObject json = bean.toJSONObject(timeZoneId);
         response.setContentType(JSTON_UTF8);
         json.writeJSONString(response.getWriter());
     }

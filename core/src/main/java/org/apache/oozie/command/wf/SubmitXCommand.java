@@ -31,6 +31,7 @@ import org.apache.oozie.service.HadoopAccessorService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.service.DagXLogInfoService;
 import org.apache.oozie.util.ConfigUtils;
+import org.apache.oozie.util.ELUtils;
 import org.apache.oozie.util.LogUtils;
 import org.apache.oozie.util.XLog;
 import org.apache.oozie.util.ParamChecker;
@@ -74,10 +75,28 @@ public class SubmitXCommand extends WorkflowXCommand<String> {
     private String authToken;
     private List<JsonBean> insertList = new ArrayList<JsonBean>();
 
+    /**
+     * Constructor to create the workflow Submit Command.
+     *
+     * @param conf : Configuration for workflow job
+     * @param authToken : To be used for authentication
+     */
     public SubmitXCommand(Configuration conf, String authToken) {
         super("submit", "submit", 1);
         this.conf = ParamChecker.notNull(conf, "conf");
         this.authToken = ParamChecker.notEmpty(authToken, "authToken");
+    }
+
+    /**
+     * Constructor to create the workflow Submit Command.
+     *
+     * @param dryrun : if dryrun
+     * @param conf : Configuration for workflow job
+     * @param authToken : To be used for authentication
+     */
+    public SubmitXCommand(boolean dryrun, Configuration conf, String authToken) {
+        this(conf, authToken);
+        this.dryrun = dryrun;
     }
 
     private static final Set<String> DISALLOWED_DEFAULT_PROPERTIES = new HashSet<String>();
@@ -156,7 +175,7 @@ public class SubmitXCommand extends WorkflowXCommand<String> {
 
             WorkflowJobBean workflow = new WorkflowJobBean();
             workflow.setId(wfInstance.getId());
-            workflow.setAppName(app.getName());
+            workflow.setAppName(ELUtils.resolveAppName(app.getName(), conf));
             workflow.setAppPath(conf.get(OozieClient.APP_PATH));
             workflow.setConf(XmlUtils.prettyPrint(conf).toString());
             workflow.setProtoActionConf(protoActionConf.toXmlString());
@@ -177,27 +196,32 @@ public class SubmitXCommand extends WorkflowXCommand<String> {
             Element wfElem = XmlUtils.parseXml(app.getDefinition());
             ELEvaluator evalSla = createELEvaluatorForGroup(conf, "wf-sla-submit");
             String jobSlaXml = verifySlaElements(wfElem, evalSla);
-            writeSLARegistration(jobSlaXml, workflow.getId(), workflow.getUser(), workflow.getGroup(), LOG);
-            workflow.setSlaXml(jobSlaXml);
-            // System.out.println("SlaXml :"+ slaXml);
+            if (!dryrun) {
+                writeSLARegistration(jobSlaXml, workflow.getId(), workflow.getUser(), workflow.getGroup(), LOG);
+                workflow.setSlaXml(jobSlaXml);
+                // System.out.println("SlaXml :"+ slaXml);
 
-            //store.insertWorkflow(workflow);
-            insertList.add(workflow);
-            JPAService jpaService = Services.get().get(JPAService.class);
-            if (jpaService != null) {
-                try {
-                    jpaService.execute(new BulkUpdateInsertJPAExecutor(null, insertList));
+                //store.insertWorkflow(workflow);
+                insertList.add(workflow);
+                JPAService jpaService = Services.get().get(JPAService.class);
+                if (jpaService != null) {
+                    try {
+                        jpaService.execute(new BulkUpdateInsertJPAExecutor(null, insertList));
+                    }
+                    catch (JPAExecutorException je) {
+                        throw new CommandException(je);
+                    }
                 }
-                catch (JPAExecutorException je) {
-                    throw new CommandException(je);
+                else {
+                    LOG.error(ErrorCode.E0610);
+                    return null;
                 }
+
+                return workflow.getId();
             }
             else {
-                LOG.error(ErrorCode.E0610);
-                return null;
+                return "OK";
             }
-
-            return workflow.getId();
         }
         catch (WorkflowException ex) {
             throw new CommandException(ex);
@@ -206,7 +230,7 @@ public class SubmitXCommand extends WorkflowXCommand<String> {
             throw new CommandException(ex);
         }
         catch (Exception ex) {
-            throw new CommandException(ErrorCode.E0803, ex);
+            throw new CommandException(ErrorCode.E0803, ex.getMessage(), ex);
         }
     }
 
@@ -242,7 +266,7 @@ public class SubmitXCommand extends WorkflowXCommand<String> {
         }
         catch (Exception e) {
             e.printStackTrace();
-            throw new CommandException(ErrorCode.E1007, "workflow " + id, e);
+            throw new CommandException(ErrorCode.E1007, "workflow " + id, e.getMessage(), e);
         }
     }
 

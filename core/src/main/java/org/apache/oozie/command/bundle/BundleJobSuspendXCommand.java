@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -133,8 +133,8 @@ public class BundleJobSuspendXCommand extends SuspendTransitionXCommand {
     @Override
     protected void verifyPrecondition() throws CommandException, PreconditionException {
         if (bundleJob.getStatus() == Job.Status.SUCCEEDED || bundleJob.getStatus() == Job.Status.FAILED
-                || bundleJob.getStatus() == Job.Status.KILLED) {
-            LOG.info("BundleJobSuspendXCommand is not going to execute because job finished or failed or killed, id = "
+                || bundleJob.getStatus() == Job.Status.KILLED || bundleJob.getStatus() == Job.Status.DONEWITHERROR) {
+            LOG.info("BundleJobSuspendXCommand is not going to execute because job either succeeded, failed, killed, or donewitherror; id = "
                             + jobId + ", status = " + bundleJob.getStatus());
             throw new PreconditionException(ErrorCode.E1312, jobId, bundleJob.getStatus().toString());
         }
@@ -154,15 +154,16 @@ public class BundleJobSuspendXCommand extends SuspendTransitionXCommand {
     }
 
     @Override
-    public void suspendChildren() {
+    public void suspendChildren() throws CommandException {
         for (BundleActionBean action : this.bundleActions) {
-            if (action.getStatus() == Job.Status.RUNNING || action.getStatus() == Job.Status.PREP) {
+            if (action.getStatus() == Job.Status.RUNNING || action.getStatus() == Job.Status.RUNNINGWITHERROR
+                    || action.getStatus() == Job.Status.PREP || action.getStatus() == Job.Status.PAUSED
+                    || action.getStatus() == Job.Status.PAUSEDWITHERROR) {
                 // queue a CoordSuspendXCommand
                 if (action.getCoordId() != null) {
                     queue(new CoordSuspendXCommand(action.getCoordId()));
                     updateBundleAction(action);
-                    LOG.debug(
-                            "Suspend bundle action = [{0}], new status = [{1}], pending = [{2}] and queue CoordSuspendXCommand for [{3}]",
+                    LOG.debug("Suspend bundle action = [{0}], new status = [{1}], pending = [{2}] and queue CoordSuspendXCommand for [{3}]",
                             action.getBundleActionId(), action.getStatus(), action.getPending(), action.getCoordId());
                 } else {
                     updateBundleAction(action);
@@ -182,6 +183,16 @@ public class BundleJobSuspendXCommand extends SuspendTransitionXCommand {
         else if (action.getStatus() == Job.Status.RUNNING) {
             action.setStatus(Job.Status.SUSPENDED);
         }
+        else if (action.getStatus() == Job.Status.RUNNINGWITHERROR) {
+            action.setStatus(Job.Status.SUSPENDEDWITHERROR);
+        }
+        else if (action.getStatus() == Job.Status.PAUSED) {
+            action.setStatus(Job.Status.SUSPENDED);
+        }
+        else if (action.getStatus() == Job.Status.PAUSEDWITHERROR) {
+            action.setStatus(Job.Status.SUSPENDEDWITHERROR);
+        }
+
         action.incrementAndGetPending();
         action.setLastModifiedTime(new Date());
         updateList.add(action);

@@ -22,6 +22,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.VersionInfo;
 import org.apache.oozie.client.OozieClient.SYSTEM_MODE;
+import org.apache.oozie.util.DateUtils;
 import org.apache.oozie.util.XLog;
 import org.apache.oozie.util.Instrumentable;
 import org.apache.oozie.util.IOUtils;
@@ -107,6 +108,11 @@ public class Services {
         setServiceInternal(XLogService.class, false);
         setServiceInternal(ConfigurationService.class, true);
         conf = get(ConfigurationService.class).getConf();
+        DateUtils.setConf(conf);
+        if (!DateUtils.getOozieProcessingTimeZone().equals(DateUtils.UTC)) {
+            XLog.getLog(getClass()).warn("Oozie configured to work in a timezone other than UTC: {0}",
+                                         DateUtils.getOozieProcessingTimeZone().getID());
+        }
         systemId = conf.get(CONF_SYSTEM_ID, ("oozie-" + System.getProperty("user.name")));
         if (systemId.length() > MAX_SYSTEM_ID_LEN) {
             systemId = systemId.substring(0, MAX_SYSTEM_ID_LEN);
@@ -130,7 +136,7 @@ public class Services {
             return file.getAbsolutePath();
         }
         catch (IOException ex) {
-            ServiceException sex = new ServiceException(ErrorCode.E0001, ex);
+            ServiceException sex = new ServiceException(ErrorCode.E0001, "", ex);
             XLog.getLog(getClass()).fatal(ex);
             throw sex;
         }
@@ -201,11 +207,12 @@ public class Services {
         try {
             loadServices();
         }
-        catch (RuntimeException ex) {
-            XLog.getLog(getClass()).fatal(ex.getMessage(), ex);
-            throw ex;
+        catch (RuntimeException rex) {
+            XLog.getLog(getClass()).fatal(rex.getMessage(), rex);
+            throw rex;
         }
         catch (ServiceException ex) {
+            XLog.getLog(getClass()).fatal(ex.getMessage(), ex);
             SERVICES = null;
             throw ex;
         }
@@ -261,7 +268,9 @@ public class Services {
         try {
             Map<Class, Service> map = new LinkedHashMap<Class, Service>();
             Class[] classes = conf.getClasses(CONF_SERVICE_CLASSES);
+            log.debug("Services list obtained from property '" + CONF_SERVICE_CLASSES + "'");
             Class[] classesExt = conf.getClasses(CONF_SERVICE_EXT_CLASSES);
+            log.debug("Services list obtained from property '" + CONF_SERVICE_EXT_CLASSES + "'");
             List<Service> list = new ArrayList<Service>();
             loadServices(classes, list);
             loadServices(classesExt, list);
@@ -277,8 +286,9 @@ public class Services {
             for (Map.Entry<Class, Service> entry : map.entrySet()) {
                 setService(entry.getValue().getClass());
             }
-        } catch (RuntimeException ex) {
-            throw new ServiceException(ErrorCode.E0103, ex.getMessage(), ex);
+        } catch (RuntimeException rex) {
+            log.fatal("Runtime Exception during Services Load. Check your list of '" + CONF_SERVICE_CLASSES + "' or '" + CONF_SERVICE_EXT_CLASSES + "'");
+            throw new ServiceException(ErrorCode.E0103, rex.getMessage(), rex);
         }
     }
 

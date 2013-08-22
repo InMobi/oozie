@@ -135,6 +135,14 @@ public class TestXCommand extends XTestCase {
             execute = true;
             return null;
         }
+
+        private void resetCalledMethods() {
+            eagerLoadState = false;
+            eagerVerifyPrecondition = false;
+            loadState = false;
+            verifyPrecondition = false;
+            execute = false;
+        }
     }
 
     public void testXCommandGetters() throws Exception {
@@ -164,7 +172,7 @@ public class TestXCommand extends XTestCase {
     public void testXCommandLifecycleLockingFailingToLock() throws Exception {
         Thread t = new LockGetter();
         t.start();
-        Thread.sleep(150);
+        sleep(150);
         AXCommand command = new AXCommand(true);
         try {
             command.call();
@@ -203,6 +211,18 @@ public class TestXCommand extends XTestCase {
         }
     }
 
+    public void testXCommandPossibleReleaseLockWithoutAcquireEdgeCase()
+            throws Exception {
+        AXCommand command = new AXCommand(true);
+        command.setInterruptMode(false);
+        command.call();
+        assertTrue(command.execute);
+        command.resetCalledMethods();
+        command.setInterruptMode(true);
+        command.call();
+        assertTrue(command.execute);
+    }
+
     private static class LockGetter extends Thread {
 
         @Override
@@ -212,7 +232,7 @@ public class TestXCommand extends XTestCase {
                 if (lock == null) {
                     fail();
                 }
-                Thread.sleep(150);
+                sleep(150);
             }
             catch (InterruptedException ex) {
                 // NOP

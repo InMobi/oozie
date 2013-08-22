@@ -166,14 +166,15 @@ public class PigMain extends LauncherMain {
             // append required PIG properties to the default hadoop log4j file
             Properties hadoopProps = new Properties();
             hadoopProps.load(log4jFile.openStream());
+            hadoopProps.setProperty("log4j.rootLogger", pigLogLevel + ", A, B");
             hadoopProps.setProperty("log4j.logger.org.apache.pig", pigLogLevel + ", A, B");
             hadoopProps.setProperty("log4j.appender.A", "org.apache.log4j.ConsoleAppender");
             hadoopProps.setProperty("log4j.appender.A.layout", "org.apache.log4j.PatternLayout");
-            hadoopProps.setProperty("log4j.appender.A.layout.ConversionPattern", "%-4r [%t] %-5p %c %x - %m%n");
+            hadoopProps.setProperty("log4j.appender.A.layout.ConversionPattern", "%d [%t] %-5p %c %x - %m%n");
             hadoopProps.setProperty("log4j.appender.B", "org.apache.log4j.FileAppender");
             hadoopProps.setProperty("log4j.appender.B.file", logFile);
             hadoopProps.setProperty("log4j.appender.B.layout", "org.apache.log4j.PatternLayout");
-            hadoopProps.setProperty("log4j.appender.B.layout.ConversionPattern", "%-4r [%t] %-5p %c %x - %m%n");
+            hadoopProps.setProperty("log4j.appender.B.layout.ConversionPattern", "%d [%t] %-5p %c %x - %m%n");
 
             String localProps = new File("piglog4j.properties").getAbsolutePath();
             OutputStream os1 = new FileOutputStream(localProps);
@@ -280,6 +281,12 @@ public class PigMain extends LauncherMain {
         if (pigRunnerExists) {
             System.out.println("Run pig script using PigRunner.run() for Pig version 0.8+");
             PigStats stats = PigRunner.run(args, null);
+            String jobIds = getHadoopJobIds(stats);
+            if (jobIds != null && !jobIds.isEmpty()) {
+                System.out.println("Hadoop Job IDs executed by Pig: " + jobIds);
+                File f = new File(System.getProperty(EXTERNAL_CHILD_IDS));
+                writeExternalData(jobIds, f);
+            }
             // isSuccessful is the API from 0.9 supported by both PigStats and
             // EmbeddedPigStats
             if (!stats.isSuccessful()) {
@@ -293,12 +300,6 @@ public class PigMain extends LauncherMain {
                 // return
                 if (resetSecurityManager) {
                     return;
-                }
-                String jobIds = getHadoopJobIds(stats);
-                if (jobIds != null) {
-                    System.out.println(" Hadoop Job IDs executed by Pig: " + jobIds);
-                    File f = new File(System.getProperty(EXTERNAL_CHILD_IDS));
-                    writeExternalData(jobIds, f);
                 }
                 // Retrieve stats only if user has specified in workflow
                 // configuration

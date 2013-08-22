@@ -266,10 +266,10 @@ public abstract class XCommand<T> implements XCallable<T> {
                         LOG.debug("Command [{0}] key [{1}]  already executed for [{2}]", getName(), getEntityKey(), this.toString());
                         return null;
                     }
-                    LOG.debug("Load state for [{0}]", getEntityKey());
+                    LOG.trace("Load state for [{0}]", getEntityKey());
                     loadState();
                     LOG = XLog.resetPrefix(LOG);
-                    LOG.debug("Precondition check for command [{0}] key [{1}]", getName(), getEntityKey());
+                    LOG.trace("Precondition check for command [{0}] key [{1}]", getName(), getEntityKey());
                     verifyPrecondition();
                     LOG.debug("Execute command [{0}] key [{1}]", getName(), getEntityKey());
                     Instrumentation.Cron executeCron = new Instrumentation.Cron();
@@ -291,7 +291,7 @@ public abstract class XCommand<T> implements XCallable<T> {
                 return ret;
             }
             finally {
-                if (isLockRequired()) {
+                if (isLockRequired() && !this.inInterruptMode()) {
                     releaseLock();
                 }
             }
@@ -314,7 +314,11 @@ public abstract class XCommand<T> implements XCallable<T> {
         catch (Exception ex) {
             LOG.error("Exception, ", ex);
             instrumentation.incr(INSTRUMENTATION_GROUP, getName() + ".exceptions", 1);
-            throw new CommandException(ErrorCode.E0607, ex);
+            throw new CommandException(ErrorCode.E0607, getName(), ex.getMessage(), ex);
+        }
+        catch (Error er) {
+            LOG.error("Error, ", er);
+            throw er;
         }
         finally {
             FaultInjection.deactivate("org.apache.oozie.command.SkipCommitFaultInjection");

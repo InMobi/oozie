@@ -98,11 +98,11 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
         }
 
         @Override
-        public String dryrunSubmit(Configuration conf, boolean startJob) throws CoordinatorEngineException {
+        public String dryRunSubmit(Configuration conf) throws CoordinatorEngineException {
             did = RestConstants.JOB_ACTION_DRYRUN;
             int idx = coordJobs.size();
             coordJobs.add(createDummyCoordinatorJob(idx, conf));
-            started.add(startJob);
+            started.add(false);
             return JOB_ID + idx;
         }
 
@@ -136,7 +136,7 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
 
         @Override
         public void reRun(String jobId, Configuration conf) throws BaseEngineException {
-            throw new BaseEngineException(new XException(ErrorCode.E0301));
+            throw new BaseEngineException(new XException(ErrorCode.E0301, "invalid use of rerun"));
         }
 
         @Override
@@ -223,8 +223,8 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
         coordJob.setExecution(Execution.FIFO);
         coordJob.setConcurrency(1);
         try {
-            coordJob.setEndTime(DateUtils.parseDateUTC("2009-02-03T23:59Z"));
-            coordJob.setStartTime(DateUtils.parseDateUTC("2009-02-01T23:59Z"));
+            coordJob.setEndTime(DateUtils.parseDateOozieTZ("2009-02-03T23:59Z"));
+            coordJob.setStartTime(DateUtils.parseDateOozieTZ("2009-02-01T23:59Z"));
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -256,8 +256,8 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
         coordJob.setExecution(Execution.FIFO);
         coordJob.setConcurrency(1);
         try {
-            coordJob.setEndTime(DateUtils.parseDateUTC("2009-02-03T23:59Z"));
-            coordJob.setStartTime(DateUtils.parseDateUTC("2009-02-01T23:59Z"));
+            coordJob.setEndTime(DateUtils.parseDateOozieTZ("2009-02-03T23:59Z"));
+            coordJob.setStartTime(DateUtils.parseDateOozieTZ("2009-02-01T23:59Z"));
         }
         catch (Exception e) {
             e.printStackTrace();

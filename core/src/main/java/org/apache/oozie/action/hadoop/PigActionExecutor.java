@@ -26,14 +26,11 @@ import org.apache.oozie.action.ActionExecutorException;
 import org.apache.oozie.client.XOozieClient;
 import org.apache.oozie.client.WorkflowAction;
 import org.apache.oozie.service.HadoopAccessorException;
-import org.apache.oozie.util.ClassUtils;
 import org.apache.oozie.util.IOUtils;
 import org.apache.oozie.util.XLog;
-import org.apache.oozie.util.XmlUtils;
 import org.jdom.Element;
 import org.jdom.Namespace;
 import org.jdom.JDOMException;
-import org.mortbay.log.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -173,12 +170,20 @@ public class PigActionExecutor extends JavaActionExecutor {
         return stats;
     }
 
+    @Override
+    protected void setActionCompletionData(Context context, FileSystem fs) throws HadoopAccessorException, IOException,
+            URISyntaxException {
+        String data = getExternalChildIDs(context, fs);
+        context.setExternalChildIDs(data);
+    }
+
     private String getExternalChildIDs(Context context, FileSystem actionFs) throws IOException,
             HadoopAccessorException, URISyntaxException {
         Path actionOutput = LauncherMapper.getExternalChildIDsDataPath(context.getActionDir());
         String externalIDs = null;
         if (actionFs.exists(actionOutput)) {
             externalIDs = getDataFromPath(actionOutput, actionFs);
+            XLog.getLog(getClass()).info(XLog.STD, "Hadoop Jobs launched : [{0}]", externalIDs);
         }
         return externalIDs;
     }
@@ -203,12 +208,11 @@ public class PigActionExecutor extends JavaActionExecutor {
     /**
      * Return the sharelib postfix for the action.
      *
-     * @param context executor context.
-     * @param actionXml the action XML.
-     * @return the action sharelib post fix, this implementation returns <code>pig</code>.
+     * @return returns <code>pig</code>.
+     * @param actionXml
      */
     @Override
-    protected String getShareLibPostFix(Context context, Element actionXml) {
+    protected String getDefaultShareLibName(Element actionXml) {
         return "pig";
     }
 

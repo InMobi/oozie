@@ -23,7 +23,7 @@
 
     <xs:simpleType name="IDENTIFIER">
         <xs:restriction base="xs:string">
-            <xs:pattern value="([a-zA-Z_]([\-_a-zA-Z0-9])*){1,39})"/>
+            <xs:pattern value="([a-zA-Z_]([\-_a-zA-Z0-9])*){1,39}"/>
         </xs:restriction>
     </xs:simpleType>
 
@@ -41,7 +41,7 @@
             <xs:element name="end" type="workflow:END" minOccurs="1" maxOccurs="1"/>
             <xs:any namespace="uri:oozie:sla:0.1" minOccurs="0" maxOccurs="1"/>
         </xs:sequence>
-        <xs:attribute name="name" type="workflow:IDENTIFIER" use="required"/>
+        <xs:attribute name="name" type="xs:string" use="required"/>
     </xs:complexType>
 
     <xs:complexType name="START">
@@ -177,12 +177,12 @@
     </xs:complexType>
 
     <xs:complexType name="FS">
-        <xs:sequence>
-            <xs:element name="delete" type="workflow:DELETE" minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="mkdir" type="workflow:MKDIR" minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="move" type="workflow:MOVE" minOccurs="0" maxOccurs="unbounded"/>
-            <xs:element name="chmod" type="workflow:CHMOD" minOccurs="0" maxOccurs="unbounded"/>
-        </xs:sequence>
+	<xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="delete" type="workflow:DELETE"/>
+            <xs:element name="mkdir" type="workflow:MKDIR"/>
+            <xs:element name="move" type="workflow:MOVE"/>
+            <xs:element name="chmod" type="workflow:CHMOD"/>
+        </xs:choice>
     </xs:complexType>
 
     <xs:complexType name="JAVA">

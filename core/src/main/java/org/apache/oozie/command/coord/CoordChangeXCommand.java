@@ -49,6 +49,7 @@ import org.apache.oozie.util.DateUtils;
 import org.apache.oozie.util.JobUtils;
 import org.apache.oozie.util.LogUtils;
 import org.apache.oozie.util.ParamChecker;
+import org.apache.oozie.util.StatusUtils;
 
 public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
     private final String jobId;
@@ -115,7 +116,7 @@ public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
         if (map.containsKey(OozieClient.CHANGE_VALUE_ENDTIME)) {
             String value = map.get(OozieClient.CHANGE_VALUE_ENDTIME);
             try {
-                newEndTime = DateUtils.parseDateUTC(value);
+                newEndTime = DateUtils.parseDateOozieTZ(value);
             }
             catch (Exception ex) {
                 throw new CommandException(ErrorCode.E1015, value, "must be a valid date");
@@ -139,7 +140,7 @@ public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
             }
             else {
                 try {
-                    newPauseTime = DateUtils.parseDateUTC(value);
+                    newPauseTime = DateUtils.parseDateOozieTZ(value);
                 }
                 catch (Exception ex) {
                     throw new CommandException(ErrorCode.E1015, value, "must be a valid date");
@@ -248,15 +249,14 @@ public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
     }
 
     /**
-     * Delete last action for a coordinator job
+     * Delete coordinator action
      *
-     * @param coordJob coordinator job
-     * @param actionNum last action number of the coordinator job
+     * @param actionNum coordinator action number
      */
     private void deleteAction(int actionNum) throws CommandException {
         try {
-            String coordActionId = jpaService.execute(new CoordJobGetActionByActionNumberJPAExecutor(jobId, actionNum));
-            CoordinatorActionBean bean = jpaService.execute(new CoordActionGetJPAExecutor(coordActionId));
+            String actionId = jpaService.execute(new CoordJobGetActionByActionNumberJPAExecutor(jobId, actionNum));
+            CoordinatorActionBean bean = jpaService.execute(new CoordActionGetJPAExecutor(actionId));
             deleteList.add(bean);
         } catch (JPAExecutorException e) {
             throw new CommandException(e);
@@ -297,14 +297,18 @@ public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
         try {
             if (newEndTime != null) {
                 coordJob.setEndTime(newEndTime);
-                if (coordJob.getStatus() == CoordinatorJob.Status.SUCCEEDED
-                        || coordJob.getStatus() == CoordinatorJob.Status.RUNNING
-                        || coordJob.getStatus() == CoordinatorJob.Status.DONEWITHERROR
-                        || coordJob.getStatus() == CoordinatorJob.Status.FAILED) {
+                if (coordJob.getStatus() == CoordinatorJob.Status.SUCCEEDED){
                     coordJob.setStatus(CoordinatorJob.Status.RUNNING);
-                    coordJob.setPending();
-                    coordJob.resetDoneMaterialization();
                 }
+                if (coordJob.getStatus() == CoordinatorJob.Status.DONEWITHERROR
+                        || coordJob.getStatus() == CoordinatorJob.Status.FAILED) {
+                    // Check for backward compatibility for Oozie versions (3.2 and before)
+                    // when RUNNINGWITHERROR, SUSPENDEDWITHERROR and
+                    // PAUSEDWITHERROR is not supported
+                    coordJob.setStatus(StatusUtils.getStatusIfBackwardSupportTrue(CoordinatorJob.Status.RUNNINGWITHERROR));
+                }
+                coordJob.setPending();
+                coordJob.resetDoneMaterialization();
             }
 
             if (newConcurrency != null) {
@@ -314,19 +318,27 @@ public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
             if (newPauseTime != null || resetPauseTime == true) {
                 this.coordJob.setPauseTime(newPauseTime);
                 if (oldPauseTime != null && newPauseTime != null) {
-                    if (oldPauseTime.before(newPauseTime) && this.coordJob.getStatus() == Job.Status.PAUSED) {
-                        this.coordJob.setStatus(Job.Status.RUNNING);
+                    if (oldPauseTime.before(newPauseTime)) {
+                        if (this.coordJob.getStatus() == Job.Status.PAUSED) {
+                            this.coordJob.setStatus(Job.Status.RUNNING);
+                        }
+                        else if (this.coordJob.getStatus() == Job.Status.PAUSEDWITHERROR) {
+                            this.coordJob.setStatus(Job.Status.RUNNINGWITHERROR);
+                        }
                     }
                 }
-                else if (oldPauseTime != null && newPauseTime == null && this.coordJob.getStatus() == Job.Status.PAUSED) {
-                    this.coordJob.setStatus(Job.Status.RUNNING);
+                else if (oldPauseTime != null && newPauseTime == null) {
+                    if (this.coordJob.getStatus() == Job.Status.PAUSED) {
+                        this.coordJob.setStatus(Job.Status.RUNNING);
+                    }
+                    else if (this.coordJob.getStatus() == Job.Status.PAUSEDWITHERROR) {
+                        this.coordJob.setStatus(Job.Status.RUNNINGWITHERROR);
+                    }
                 }
-
                 if (!resetPauseTime) {
                     processLookaheadActions(coordJob, newPauseTime);
                 }
             }
-
 
             if (coordJob.getNextMaterializedTime() != null && coordJob.getEndTime().compareTo(coordJob.getNextMaterializedTime()) <= 0) {
                 LOG.info("[" + coordJob.getId() + "]: all actions have been materialized, job status = " + coordJob.getStatus()
@@ -334,7 +346,7 @@ public class CoordChangeXCommand extends CoordinatorXCommand<Void> {
                 // set doneMaterialization to true when materialization is done
                 coordJob.setDoneMaterialization();
             }
-            
+
             updateList.add(coordJob);
             jpaService.execute(new BulkUpdateDeleteJPAExecutor(updateList, deleteList, false));
 

@@ -50,12 +50,12 @@ import org.apache.oozie.service.JPAService;
 import org.apache.oozie.service.SchemaService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.service.UUIDService;
-import org.apache.oozie.service.WorkflowAppService;
 import org.apache.oozie.service.SchemaService.SchemaName;
 import org.apache.oozie.service.UUIDService.ApplicationType;
 import org.apache.oozie.util.ConfigUtils;
 import org.apache.oozie.util.DateUtils;
 import org.apache.oozie.util.ELEvaluator;
+import org.apache.oozie.util.ELUtils;
 import org.apache.oozie.util.IOUtils;
 import org.apache.oozie.util.InstrumentUtils;
 import org.apache.oozie.util.LogUtils;
@@ -63,6 +63,7 @@ import org.apache.oozie.util.ParamChecker;
 import org.apache.oozie.util.PropertiesUtils;
 import org.apache.oozie.util.XConfiguration;
 import org.apache.oozie.util.XmlUtils;
+import org.apache.oozie.util.ParameterVerifier;
 import org.jdom.Attribute;
 import org.jdom.Element;
 import org.jdom.JDOMException;
@@ -130,7 +131,9 @@ public class BundleSubmitXCommand extends SubmitTransitionXCommand {
         try {
             InstrumentUtils.incrJobCounter(getName(), 1, getInstrumentation());
 
-            XmlUtils.removeComments(this.bundleBean.getOrigJobXml().toString());
+            ParameterVerifier.verifyParameters(conf, XmlUtils.parseXml(bundleBean.getOrigJobXml()));
+            
+            String jobXmlWithNoComment = XmlUtils.removeComments(this.bundleBean.getOrigJobXml().toString());
             // Resolving all variables in the job properties.
             // This ensures the Hadoop Configuration semantics is preserved.
             XConfiguration resolvedVarsConf = new XConfiguration();
@@ -139,7 +142,7 @@ public class BundleSubmitXCommand extends SubmitTransitionXCommand {
             }
             conf = resolvedVarsConf;
 
-            String resolvedJobXml = resolvedVars(bundleBean.getOrigJobXml(), conf);
+            String resolvedJobXml = resolvedVars(jobXmlWithNoComment, conf);
 
             //verify the uniqueness of coord names
             verifyCoordNameUnique(resolvedJobXml);
@@ -250,11 +253,11 @@ public class BundleSubmitXCommand extends SubmitTransitionXCommand {
         }
         catch (IllegalArgumentException iex) {
             LOG.warn("IllegalArgumentException:  ", iex);
-            throw new CommandException(ErrorCode.E1310, iex);
+            throw new CommandException(ErrorCode.E1310, iex.getMessage(), iex);
         }
         catch (Exception ex) {
             LOG.warn("Exception:  ", ex);
-            throw new CommandException(ErrorCode.E1310, ex);
+            throw new CommandException(ErrorCode.E1310, ex.getMessage(), ex);
         }
     }
 
@@ -399,8 +402,9 @@ public class BundleSubmitXCommand extends SubmitTransitionXCommand {
 
             bundleJob.setId(jobId);
             bundleJob.setAuthToken(this.authToken);
-            bundleJob.setAppName(XmlUtils.parseXml(bundleBean.getOrigJobXml()).getAttributeValue("name"));
-            bundleJob.setAppName(bundleJob.getAppName());
+            String name = XmlUtils.parseXml(bundleBean.getOrigJobXml()).getAttributeValue("name");
+            name = ELUtils.resolveAppName(name, conf);
+            bundleJob.setAppName(name);
             bundleJob.setAppPath(conf.get(OozieClient.BUNDLE_APP_PATH));
             // bundleJob.setStatus(BundleJob.Status.PREP); //This should be set in parent class.
             bundleJob.setCreatedTime(new Date());
@@ -414,7 +418,7 @@ public class BundleSubmitXCommand extends SubmitTransitionXCommand {
             if (controlsElement != null) {
                 Element kickoffTimeElement = controlsElement.getChild("kick-off-time", jobElement.getNamespace());
                 if (kickoffTimeElement != null && !kickoffTimeElement.getValue().isEmpty()) {
-                    Date kickoffTime = DateUtils.parseDateUTC(kickoffTimeElement.getValue());
+                    Date kickoffTime = DateUtils.parseDateOozieTZ(kickoffTimeElement.getValue());
                     bundleJob.setKickoffTime(kickoffTime);
                 }
             }
@@ -505,7 +509,7 @@ public class BundleSubmitXCommand extends SubmitTransitionXCommand {
             }
         }
         catch (JDOMException jex) {
-            throw new CommandException(ErrorCode.E1301, jex);
+            throw new CommandException(ErrorCode.E1301, jex.getMessage(), jex);
         }
 
         return null;

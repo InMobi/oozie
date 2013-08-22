@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -18,6 +18,7 @@
 package org.apache.oozie.command.coord;
 
 import java.util.List;
+import java.util.Map;
 
 import org.apache.oozie.ErrorCode;
 import org.apache.oozie.SLAEventBean;
@@ -25,8 +26,9 @@ import org.apache.oozie.XException;
 import org.apache.oozie.command.CommandException;
 import org.apache.oozie.command.PreconditionException;
 import org.apache.oozie.command.XCommand;
-import org.apache.oozie.executor.jpa.SLAEventsGetForSeqIdJPAExecutor;
+import org.apache.oozie.executor.jpa.SLAEventsGetForFilterJPAExecutor;
 import org.apache.oozie.service.JPAService;
+import org.apache.oozie.service.Service;
 import org.apache.oozie.service.Services;
 
 /**
@@ -38,46 +40,36 @@ public class SLAEventsXCommand extends XCommand<List<SLAEventBean>> {
     private long seqId = 0;
     private int maxNoEvents = 100; // Default
     private long lastSeqId = -1;
+    private final Map<String, List<String>> filter;
 
-    public SLAEventsXCommand(long seqId, int maxNoEvnts) {
+    public static final String SLA_DEFAULT_MAXEVENTS = Service.CONF_PREFIX + "sla.default.maxevents";
+
+    public SLAEventsXCommand(long seqId, int maxNoEvnts, Map<String, List<String>> filter) {
         super("SLAEventsXCommand", "SLAEventsXCommand", 1);
         this.seqId = seqId;
-        this.maxNoEvents = maxNoEvnts;
+        int sysMax = Services.get().getConf().getInt(SLA_DEFAULT_MAXEVENTS, 1000);
+        this.maxNoEvents = maxNoEvnts > sysMax ? sysMax : maxNoEvnts;
+        this.filter = filter;
     }
 
-    /* (non-Javadoc)
-     * @see org.apache.oozie.command.XCommand#isLockRequired()
-     */
     @Override
     protected boolean isLockRequired() {
         return false;
     }
 
-    /* (non-Javadoc)
-     * @see org.apache.oozie.command.XCommand#getEntityKey()
-     */
     @Override
     public String getEntityKey() {
         return Long.toString(seqId);
     }
 
-    /* (non-Javadoc)
-     * @see org.apache.oozie.command.XCommand#loadState()
-     */
     @Override
     protected void loadState() throws CommandException {
     }
 
-    /* (non-Javadoc)
-     * @see org.apache.oozie.command.XCommand#verifyPrecondition()
-     */
     @Override
     protected void verifyPrecondition() throws CommandException, PreconditionException {
     }
 
-    /* (non-Javadoc)
-     * @see org.apache.oozie.command.XCommand#execute()
-     */
     @Override
     protected List<SLAEventBean> execute() throws CommandException {
         try {
@@ -85,7 +77,7 @@ public class SLAEventsXCommand extends XCommand<List<SLAEventBean>> {
             List<SLAEventBean> slaEventList = null;
             long lastSeqId[] = new long[1];
             if (jpaService != null) {
-                slaEventList = jpaService.execute(new SLAEventsGetForSeqIdJPAExecutor(seqId, maxNoEvents, lastSeqId));
+                slaEventList = jpaService.execute(new SLAEventsGetForFilterJPAExecutor(seqId, maxNoEvents, filter, lastSeqId));
             }
             else {
                 LOG.error(ErrorCode.E0610);

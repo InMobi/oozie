@@ -108,7 +108,7 @@ public abstract class SubmitHttpXCommand extends WorkflowXCommand<String> {
             String wfXml = getWorkflowXml(conf);
             LOG.debug("workflow xml created on the server side is :\n");
             LOG.debug(wfXml);
-            WorkflowApp app = wps.parseDef(wfXml);
+            WorkflowApp app = wps.parseDef(wfXml, conf);
             XConfiguration protoActionConf = wps.createProtoActionConf(conf, authToken, false);
             WorkflowLib workflowLib = Services.get().get(WorkflowStoreService.class).getWorkflowLibWithNoDB();
 
@@ -165,7 +165,7 @@ public abstract class SubmitHttpXCommand extends WorkflowXCommand<String> {
             throw new CommandException(ex);
         }
         catch (Exception ex) {
-            throw new CommandException(ErrorCode.E0803, ex);
+            throw new CommandException(ErrorCode.E0803, ex.getMessage(), ex);
         }
     }
 

@@ -19,19 +19,16 @@ package org.apache.oozie.executor.jpa;
 
 import java.util.Date;
 
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.oozie.CoordinatorActionBean;
 import org.apache.oozie.CoordinatorJobBean;
 import org.apache.oozie.client.CoordinatorAction;
 import org.apache.oozie.client.CoordinatorJob;
 import org.apache.oozie.local.LocalOozie;
-import org.apache.oozie.service.CallableQueueService;
 import org.apache.oozie.service.JPAService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.test.XDataTestCase;
 import org.apache.oozie.util.DateUtils;
-import org.apache.oozie.util.XmlUtils;
 
 public class TestCoordActionGetForInfoJPAExecutor extends XDataTestCase {
     Services services;
@@ -42,12 +39,10 @@ public class TestCoordActionGetForInfoJPAExecutor extends XDataTestCase {
         services = new Services();
         services.init();
         cleanUpDBTables();
-        LocalOozie.start();
     }
 
     @Override
     protected void tearDown() throws Exception {
-        LocalOozie.stop();
         services.destroy();
         super.tearDown();
     }
@@ -89,7 +84,7 @@ public class TestCoordActionGetForInfoJPAExecutor extends XDataTestCase {
         // Pass the expected values
         _testGetForInfo(action.getId(), job.getId(), CoordinatorAction.Status.WAITING, action.getId() + "_E",
                 errorCode, errorMessage, consoleUrl, externalStatus, trackerUri, createdTime, missingDeps,
-                DateUtils.parseDateUTC(actionNominalTime), actionNum, lastModifiedTime);
+                DateUtils.parseDateOozieTZ(actionNominalTime), actionNum, lastModifiedTime);
 
        //services.destroy();
     }
@@ -128,22 +123,18 @@ public class TestCoordActionGetForInfoJPAExecutor extends XDataTestCase {
     }
 
     public void testCoordActionGetAllColumns() throws Exception {
+        services.destroy();
         setSystemProperty(CoordActionGetForInfoJPAExecutor.COORD_GET_ALL_COLS_FOR_ACTION, "true");
-        new Services().init();
-        try {
-            String resourceXmlName = "coord-action-get.xml";
-            CoordinatorJobBean job = addRecordToCoordJobTable(CoordinatorJob.Status.RUNNING, false, false);
-            CoordinatorActionBean action = createCoordAction(job.getId(), 1, CoordinatorAction.Status.WAITING,
-                    resourceXmlName, 0);
-            String slaXml = "slaXml";
-            action.setSlaXml(slaXml);
-            // Insert the action
-            insertRecordCoordAction(action);
-            _testGetForInfoAllActions(action.getId(), slaXml);
-        }
-        finally {
-            Services.get().destroy();
-        }
+        services = new Services();
+        services.init();
+        String resourceXmlName = "coord-action-get.xml";
+        CoordinatorJobBean job = addRecordToCoordJobTable(CoordinatorJob.Status.RUNNING, false, false);
+        CoordinatorActionBean action = createCoordAction(job.getId(), 1, CoordinatorAction.Status.WAITING, resourceXmlName, 0);
+        String slaXml = "slaXml";
+        action.setSlaXml(slaXml);
+        // Insert the action
+        insertRecordCoordAction(action);
+        _testGetForInfoAllActions(action.getId(), slaXml);
     }
 
     private void _testGetForInfoAllActions(String actionId, String slaXml) throws Exception{

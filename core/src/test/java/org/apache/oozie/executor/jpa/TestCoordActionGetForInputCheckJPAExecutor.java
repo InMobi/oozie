@@ -41,12 +41,10 @@ public class TestCoordActionGetForInputCheckJPAExecutor extends XDataTestCase {
         services = new Services();
         services.init();
         cleanUpDBTables();
-        LocalOozie.start();
     }
 
     @Override
     protected void tearDown() throws Exception {
-        LocalOozie.stop();
         services.destroy();
         super.tearDown();
     }
@@ -76,7 +74,7 @@ public class TestCoordActionGetForInputCheckJPAExecutor extends XDataTestCase {
 
         // Pass the expected values
         _testGetForInputCheckX(action.getId(), job.getId(), CoordinatorAction.Status.WAITING, 0, actionXml, XmlUtils
-                .prettyPrint(conf).toString(), DateUtils.parseDateUTC(actionNominalTime), dummyCreationTime, missDeps);
+                .prettyPrint(conf).toString(), DateUtils.parseDateOozieTZ(actionNominalTime), dummyCreationTime, missDeps);
     }
 
 

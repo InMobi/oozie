@@ -107,7 +107,6 @@ public class TestBulkUpdateInsertForCoordActionStartJPAExecutor extends XDataTes
      * Test bulk inserts by inserting a workflow job and two workflow actions
      * @throws Exception
      */
-    /*
     public void testInserts() throws Exception{
         WorkflowApp app = new LiteWorkflowApp("testApp", "<workflow-app/>",
             new StartNodeDef(LiteWorkflowStoreService.LiteControlNodeHandler.class, "end"))
@@ -147,7 +146,7 @@ public class TestBulkUpdateInsertForCoordActionStartJPAExecutor extends XDataTes
         job = jpaService.execute(wfGetCmd);
         assertEquals("PREP", job.getStatusStr());
 
-    }*/
+    }
 
     /**
      * Test bulk inserts and updates by inserting wf actions and updating

@@ -1,6 +1,6 @@
 <noautolink>
 
----+!! Oozie, Yahoo! Workflow Engine for Hadoop
+---+!! Oozie, Workflow Engine for Apache Hadoop
 
 Oozie v3 is a server based _Bundle Engine_ that provides a higher-level oozie abstraction that will batch a set of coordinator applications. The user will be able to start/stop/suspend/resume/rerun a set coordinator jobs in the bundle level resulting a better and easy operational control.
 
@@ -48,6 +48,7 @@ Enough reading already? Follow the steps in [[DG_QuickStart][Oozie Quick Start]]
    * [[./client/apidocs/index.html][Oozie Client Javadocs]]
    * [[./core/apidocs/index.html][Oozie Core Javadocs]]
    * [[WebServicesAPI][Oozie Web Services API]]
+   * [[DG_UnifiedCredentialsModule][Unified Credentials Module]]
 
 ---+++ Action Extensions
 
@@ -61,6 +62,7 @@ Enough reading already? Follow the steps in [[DG_QuickStart][Oozie Quick Start]]
 ---++ Administrator Documentation
 
    * [[AG_Install][Oozie Install]]
+   * [[AG_OozieLogging][Oozie Logging]]
    * [[AG_HadoopConfiguration][Hadoop Configuration]]
    * [[AG_Monitoring][Oozie Monitoring]]
    * [[DG_CommandLineTool][Command Line Tool]]

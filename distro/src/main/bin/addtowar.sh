@@ -111,9 +111,13 @@ function getHadoopJars() {
     suffix="-[0-9.]*"
     #List is separated by ":"
     hadoopJars="hadoop-mapreduce-client-core${suffix}.jar:hadoop-mapreduce-client-common${suffix}.jar:hadoop-mapreduce-client-jobclient${suffix}.jar:hadoop-mapreduce-client-app${suffix}.jar:hadoop-yarn-common${suffix}.jar:hadoop-yarn-api${suffix}.jar:hadoop-hdfs${suffix}.jar:hadoop-common${suffix}.jar:hadoop-auth${suffix}.jar:guava*.jar:protobuf-*.jar:avro-ipc-*.jar:jackson-core-asl-*.jar:jackson-mapper-asl-*.jar:commons-configuration-*.jar"
+  elif [[ "${version}" =~ 2.* ]]; then
+    suffix="-[0-9.]*"
+    #List is separated by ":"
+    hadoopJars="hadoop-mapreduce-client-core${suffix}.jar:hadoop-mapreduce-client-common${suffix}.jar:hadoop-mapreduce-client-jobclient${suffix}.jar:hadoop-mapreduce-client-app${suffix}.jar:hadoop-yarn-common${suffix}.jar:hadoop-yarn-api${suffix}.jar:hadoop-yarn-client${suffix}.jar:hadoop-hdfs${suffix}.jar:hadoop-common${suffix}.jar:hadoop-auth${suffix}.jar:guava*.jar:protobuf-*.jar:jackson-core-asl-*.jar:jackson-mapper-asl-*.jar:commons-configuration-*.jar:commons-cli-*.jar"
   else
     echo
-    echo "Exiting: Unsupported Hadoop version '${hadoopVer}', supported versions: 0.20.1, 0.20.2, 0.20.104, 0.20.200 and 0.23.x"
+    echo "Exiting: Unsupported Hadoop version '${hadoopVer}', supported versions: 0.20.1, 0.20.2, 0.20.104, 0.20.200, 0.23.x and 2.x"
     echo
     cleanUp
     exit -1;
@@ -128,6 +132,7 @@ function printUsage() {
   echo "          [-hadoopJarsSNAPSHOT] (if Hadoop jars version on system is SNAPSHOT)"
   echo "          [-extjs EXTJS_PATH] (expanded or ZIP)"
   echo "          [-jars JARS_PATH] (multiple JAR path separated by ':')"
+  echo "          [-secureWeb WEB_XML_PATH] (path to secure web.xml)"
   echo
 }
 
@@ -149,6 +154,8 @@ extjsHome=""
 jarsPath=""
 inputWar=""
 outputWar=""
+secureWeb=false
+secureWebPath=""
 
 while [ $# -gt 0 ]
 do
@@ -217,6 +224,17 @@ do
       exit -1
     fi
     outputWar=$1
+  elif [ "$1" = "-secureWeb" ]; then
+    shift
+    if [ $# -eq 0 ]; then
+      echo
+      echo "Missing option value, secure web.xml path"
+      echo
+      printUsage
+      exit -1
+      fi
+    secureWebPath=$1
+    secureWeb=true
   fi
     shift
 done
@@ -250,6 +268,13 @@ if [ "${addJars}" = "true" ]; then
     do
       checkFileExists ${jarPath}
     done
+fi
+
+if [ "${secureWeb}" = "true" ]; then
+  checkFileExists ${secureWebPath}
+  echo
+  echo "Using SSL (HTTPS)"
+  echo
 fi
 
 #Unpacking original war
@@ -326,6 +351,12 @@ if [ "${addJars}" = "true" ]; then
   done
 fi
 
+if [ "${secureWeb}" = "true" ]; then
+  #Inject the SSL version of web.xml in oozie war
+  cp ${secureWebPath} ${tmpWarDir}/WEB-INF/web.xml
+  checkExec "Injecting secure web.xml file into staging"
+fi
+
 #Creating new Oozie WAR
 currentDir=`pwd`
 cd ${tmpWarDir}
@@ -340,5 +371,6 @@ checkExec "copying new Oozie WAR"
 echo 
 echo "New Oozie WAR file with added '${components}' at ${outputWar}"
 echo
+
 cleanUp
 exit 0

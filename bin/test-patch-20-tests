@@ -1,0 +1,120 @@
+#!/bin/bash
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+if [ "${TESTPATCHDEBUG}" == "true" ] ; then
+  set -x
+fi
+
+BASEDIR=$(pwd)
+TASKNAME="TESTS"
+OP=""
+TEMPDIR=""
+REPORTDIR=""
+SUMMARYFILE=""
+STDOUT="/dev/null"
+MVNPASSTHRU=""
+
+###############################################################################
+cleanupAndExit() {
+  exit $1
+}
+###############################################################################
+printUsage() {
+  echo "Usage: $0 --taskname | (--op=pre|post|report --tempdir=<TEMP DIR> --reportdir=<REPORT DIR> --summaryfile=<SUMMARY FILE>) [--verbose] [-D<VALUE>...] [-P<VALUE>...]"
+  echo
+}
+###############################################################################
+parseArgs() {
+  for i in $*
+  do
+    case $i in
+    --taskname)
+      echo ${TASKNAME}
+      exit 0
+      ;;
+    --op=*)
+      OP=${i#*=}
+      ;;
+    --tempdir=*)
+      TEMPDIR=${i#*=}
+      ;;
+    --reportdir=*)
+      REPORTDIR=${i#*=}
+      ;;
+    --summaryfile=*)
+      SUMMARYFILE=${i#*=}
+      ;;
+    --verbose)
+      STDOUT="/dev/stdout"
+      ;;
+    -D*)
+      MVNPASSTHRU="${MVNPASSTHRU} $i"
+      ;;
+    -P*)
+      MVNPASSTHRU="${MVNPASSTHRU} $i"
+      ;;
+    esac
+  done
+  if [[ "${TASKNAME}" == "" || "${OP}" == "" || "${TEMPDIR}" == "" || "${REPORTDIR}" == "" || "${SUMMARYFILE}" == "" ]] ; then
+    echo "Missing options"
+    echo
+    printUsage
+    cleanupAndExit 1
+  fi
+  if [[ "${OP}" != "pre" && "${OP}" != "post" && "${OP}" != "report" ]] ; then
+    echo "Invalid operation"
+    echo
+    printUsage
+    cleanupAndExit 1
+  fi
+}
+###############################################################################
+
+parseArgs "$@"
+
+case $OP in
+  pre)
+    ;;
+  post)
+    mvn test ${MVNPASSTHRU} -Dmaven.test.failure.ignore=true \
+        -Dmaven.test.error.ignore=true -fae -Doozie.test.waitfor.ratio=3 \
+        -Dtest.timeout=7200 | tee ${TEMPDIR}/${TASKNAME}.out >> $STDOUT
+    exitCode=${PIPESTATUS[0]}
+    echo "$exitCode" >  ${TEMPDIR}/${TASKNAME}.exitCode
+    ;;
+  report)
+    failedTests=`find . -name 'TEST*.xml' | xargs grep  -l -E "<failure|<error" | sed -e "s|.*target/surefire-reports/TEST-|          |g" | sed -e "s|\.xml||g"`
+    testsRun=`grep "Tests run:" ${TEMPDIR}/${TASKNAME}.out | grep -v " Time elapsed:" | awk '{print $3}' | sed 's/,//' | awk 'BEGIN {count=0} {count=count+$1} END {print "Tests run: "count}'`
+    testsFailed=`grep "Tests run:" ${TEMPDIR}/${TASKNAME}.out | grep -v " Time elapsed:" | awk '{print $5}' | sed 's/,//' | awk 'BEGIN {count=0} {count=count+$1} END {print "Tests failures: "count}'`
+    testsErrors=`grep "Tests run:" ${TEMPDIR}/${TASKNAME}.out | grep -v " Time elapsed:" | awk '{print $7}' | sed 's/,//' | awk 'BEGIN {count=0} {count=count+$1} END {print "Tests errors: "count}'`
+    testsExitCode=`cat ${TEMPDIR}/${TASKNAME}.exitCode`
+    if [[ "$testsExitCode" != "0" ]] ; then
+      if [ -n "${failedTests}" ] ; then
+        echo "{color:red}-1{color} ${TASKNAME} - the patch failed the following testcases:" >> $SUMMARYFILE
+        echo "" >> ${SUMMARYFILE}
+        echo "${failedTests}" >> $SUMMARYFILE
+        echo "" >> ${SUMMARYFILE}
+      else
+        echo "{color:red}-1{color} ${TASKNAME} - patch does not compile, cannot run testcases" >> $SUMMARYFILE
+      fi
+    else
+      echo "{color:green}+1{color} ${TASKNAME}" >> $SUMMARYFILE
+    fi
+    echo ".   $testsRun" >> $SUMMARYFILE
+    echo ".   $testsFailed" >> $SUMMARYFILE
+    echo ".   $testsErrors" >> $SUMMARYFILE
+    ;;
+esac
+
+exit 0

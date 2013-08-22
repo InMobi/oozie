@@ -22,7 +22,7 @@
 # Settings for the Embedded Tomcat that runs Oozie
 # Java System properties for Oozie should be specified in this variable
 #
-# export CATALINA_OPTS=
+export CATALINA_OPTS="$CATALINA_OPTS -Xmx1024m"
 
 # Oozie configuration file to load from Oozie configuration directory
 #
@@ -44,6 +44,10 @@
 #
 # export OOZIE_HTTP_PORT=11000
 
+# The port Oozie server runs if using SSL (HTTPS)
+#
+# export OOZIE_HTTPS_PORT=11443
+
 # The host name Oozie server runs on
 #
 # export OOZIE_HTTP_HOSTNAME=`hostname -f`
@@ -52,3 +56,10 @@
 #
 # export OOZIE_BASE_URL="http://${OOZIE_HTTP_HOSTNAME}:${OOZIE_HTTP_PORT}/oozie"
 
+# The location of the keystore for the Oozie server if using SSL (HTTPS)
+#
+# export OOZIE_HTTPS_KEYSTORE_FILE=${HOME}/.keystore
+
+# The password of the keystore for the Oozie server if using SSL (HTTPS)
+#
+# export OOZIE_HTTPS_KEYSTORE_PASS=password

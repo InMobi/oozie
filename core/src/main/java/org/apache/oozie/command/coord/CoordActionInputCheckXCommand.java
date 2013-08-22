@@ -35,6 +35,8 @@ import org.apache.oozie.command.PreconditionException;
 import org.apache.oozie.coord.CoordELEvaluator;
 import org.apache.oozie.coord.CoordELFunctions;
 import org.apache.oozie.executor.jpa.CoordActionGetForInputCheckJPAExecutor;
+import org.apache.oozie.executor.jpa.CoordActionUpdateForInputCheckJPAExecutor;
+import org.apache.oozie.executor.jpa.CoordActionUpdateForModifiedTimeJPAExecutor;
 import org.apache.oozie.executor.jpa.CoordJobGetJPAExecutor;
 import org.apache.oozie.executor.jpa.JPAExecutorException;
 import org.apache.oozie.service.HadoopAccessorException;
@@ -97,7 +99,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
             // update lastModifiedTime
             coordAction.setLastModifiedTime(new Date());
             try {
-                jpaService.execute(new org.apache.oozie.executor.jpa.CoordActionUpdateForInputCheckJPAExecutor(coordAction));
+                jpaService.execute(new CoordActionUpdateForInputCheckJPAExecutor(coordAction));
             }
             catch (JPAExecutorException e) {
                 throw new CommandException(e);
@@ -111,23 +113,37 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
 
         StringBuilder actionXml = new StringBuilder(coordAction.getActionXml());
         Instrumentation.Cron cron = new Instrumentation.Cron();
+        boolean isChangeInDependency = false;
         try {
             Configuration actionConf = new XConfiguration(new StringReader(coordAction.getRunConf()));
             cron.start();
             StringBuilder existList = new StringBuilder();
             StringBuilder nonExistList = new StringBuilder();
             StringBuilder nonResolvedList = new StringBuilder();
-            CoordCommandUtils.getResolvedList(coordAction.getMissingDependencies(), nonExistList, nonResolvedList);
+            String firstMissingDependency = "";
+            String missingDeps = coordAction.getMissingDependencies();
+            CoordCommandUtils.getResolvedList(missingDeps, nonExistList, nonResolvedList);
 
-            LOG.info("[" + actionId + "]::CoordActionInputCheck:: Missing deps:" + nonExistList.toString() + " "
+            // For clarity regarding which is the missing dependency in synchronous order
+            // instead of printing entire list, some of which, may be available
+            if(nonExistList.length() > 0) {
+                firstMissingDependency = nonExistList.toString().split(CoordELFunctions.INSTANCE_SEPARATOR)[0];
+            }
+            LOG.info("[" + actionId + "]::CoordActionInputCheck:: Missing deps:" + firstMissingDependency + " "
                     + nonResolvedList.toString());
+            // Updating the list of data dependencies that are available and those that are yet not
             boolean status = checkInput(actionXml, existList, nonExistList, actionConf);
             coordAction.setLastModifiedTime(currentTime);
             coordAction.setActionXml(actionXml.toString());
             if (nonResolvedList.length() > 0 && status == false) {
                 nonExistList.append(CoordCommandUtils.RESOLVED_UNRESOLVED_SEPARATOR).append(nonResolvedList);
             }
-            coordAction.setMissingDependencies(nonExistList.toString());
+            String nonExistListStr = nonExistList.toString();
+            if (!nonExistListStr.equals(missingDeps) || missingDeps.isEmpty()) {
+                // missingDeps empty means action should become READY
+                isChangeInDependency = true;
+                coordAction.setMissingDependencies(nonExistListStr);
+            }
             if (status == true) {
                 coordAction.setStatus(CoordinatorAction.Status.READY);
                 // pass jobID to the CoordActionReadyXCommand
@@ -145,14 +161,27 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
                     queue(new CoordActionInputCheckXCommand(coordAction.getId(), coordAction.getJobId()), getCoordInputCheckRequeueInterval());
                 }
             }
-            coordAction.setLastModifiedTime(new Date());
-            jpaService.execute(new org.apache.oozie.executor.jpa.CoordActionUpdateForInputCheckJPAExecutor(coordAction));
         }
         catch (Exception e) {
             throw new CommandException(ErrorCode.E1021, e.getMessage(), e);
         }
-        cron.stop();
-
+        finally {
+            coordAction.setLastModifiedTime(new Date());
+            cron.stop();
+            if(jpaService != null) {
+                try {
+                    if (isChangeInDependency) {
+                        jpaService.execute(new CoordActionUpdateForInputCheckJPAExecutor(coordAction));
+                    }
+                    else {
+                        jpaService.execute(new CoordActionUpdateForModifiedTimeJPAExecutor(coordAction));
+                    }
+                }
+                catch(JPAExecutorException jex) {
+                    throw new CommandException(ErrorCode.E1021, jex.getMessage(), jex);
+                }
+            }
+        }
         return null;
     }
 
@@ -250,7 +279,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
     @SuppressWarnings("unchecked")
     private boolean checkUnresolvedInstances(Element eAction, Configuration actionConf) throws Exception {
         String strAction = XmlUtils.prettyPrint(eAction).toString();
-        Date nominalTime = DateUtils.parseDateUTC(eAction.getAttributeValue("action-nominal-time"));
+        Date nominalTime = DateUtils.parseDateOozieTZ(eAction.getAttributeValue("action-nominal-time"));
         String actualTimeStr = eAction.getAttributeValue("action-actual-time");
         Date actualTime = null;
         if (actualTimeStr == null) {
@@ -258,7 +287,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
             "from previous version. Assign current date to actual time, action = " + actionId);
             actualTime = new Date();
         } else {
-            actualTime = DateUtils.parseDateUTC(actualTimeStr);
+            actualTime = DateUtils.parseDateOozieTZ(actualTimeStr);
         }
 
         StringBuffer resultedXml = new StringBuffer();
@@ -405,7 +434,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
      * @return true if path exists
      * @throws IOException thrown if unable to access the path
      */
-    private boolean pathExists(String sPath, Configuration actionConf) throws IOException {
+    protected boolean pathExists(String sPath, Configuration actionConf) throws IOException {
         LOG.debug("checking for the file " + sPath);
         Path path = new Path(sPath);
         String user = ParamChecker.notEmpty(actionConf.get(OozieClient.USER_NAME), OozieClient.USER_NAME);
@@ -415,6 +444,8 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
             return has.createFileSystem(user, path.toUri(), fsConf).exists(path);
         }
         catch (HadoopAccessorException e) {
+            coordAction.setErrorCode(e.getErrorCode().toString());
+            coordAction.setErrorMessage(e.getMessage());
             throw new IOException(e);
         }
     }
@@ -455,6 +486,26 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
         return uris.toString();
     }
 
+    /**
+     * getting the error code of the coord action. (used mainly for unit testing)
+     */
+    protected String getCoordActionErrorCode() {
+        if (coordAction != null) {
+            return coordAction.getErrorCode();
+        }
+        return null;
+    }
+
+    /**
+     * getting the error message of the coord action. (used mainly for unit testing)
+     */
+    protected String getCoordActionErrorMsg() {
+        if (coordAction != null) {
+            return coordAction.getErrorMessage();
+        }
+        return null;
+    }
+
     /* (non-Javadoc)
      * @see org.apache.oozie.command.XCommand#getEntityKey()
      */
@@ -474,6 +525,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
     /* (non-Javadoc)
      * @see org.apache.oozie.command.XCommand#eagerLoadState()
      */
+    // TODO - why loadState() is being called from eagerLoadState();
     @Override
     protected void eagerLoadState() throws CommandException {
         loadState();
@@ -513,11 +565,11 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
             return;
         }
 
-        if (coordJob.getStatus() != Job.Status.RUNNING && coordJob.getStatus() != Job.Status.PAUSED
+        if (coordJob.getStatus() != Job.Status.RUNNING && coordJob.getStatus() != Job.Status.RUNNINGWITHERROR && coordJob.getStatus() != Job.Status.PAUSED
                 && coordJob.getStatus() != Job.Status.PAUSEDWITHERROR) {
             throw new PreconditionException(
                     ErrorCode.E1100, "["+ actionId + "]::CoordActionInputCheck:: Ignoring action." +
-                    		" Coordinator job is not in RUNNING/PAUSED/PAUSEDWITHERROR state, but state="
+                    		" Coordinator job is not in RUNNING/RUNNINGWITHERROR/PAUSED/PAUSEDWITHERROR state, but state="
                             + coordJob.getStatus());
         }
     }

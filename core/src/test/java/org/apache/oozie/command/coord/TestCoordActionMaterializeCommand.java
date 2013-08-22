@@ -52,8 +52,8 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
     public void testActionMater() throws Exception {
         String jobId = "0000000-" + new Date().getTime() + "-testActionMater-C";
 
-        Date startTime = DateUtils.parseDateUTC("2009-03-06T010:00Z");
-        Date endTime = DateUtils.parseDateUTC("2009-03-11T10:00Z");
+        Date startTime = DateUtils.parseDateOozieTZ("2009-03-06T010:00Z");
+        Date endTime = DateUtils.parseDateOozieTZ("2009-03-11T10:00Z");
         addRecordToJobTable(jobId, startTime, endTime);
         new CoordActionMaterializeCommand(jobId, startTime, endTime).call();
         CoordinatorActionBean action = checkCoordAction(jobId + "@1");
@@ -62,9 +62,9 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
     public void testActionMaterWithPauseTime1() throws Exception {
         String jobId = "0000000-" + new Date().getTime() + "-testActionMater-C";
 
-        Date startTime = DateUtils.parseDateUTC("2009-03-06T10:00Z");
-        Date endTime = DateUtils.parseDateUTC("2009-03-06T10:14Z");
-        Date pauseTime = DateUtils.parseDateUTC("2009-03-06T10:04Z");
+        Date startTime = DateUtils.parseDateOozieTZ("2009-03-06T10:00Z");
+        Date endTime = DateUtils.parseDateOozieTZ("2009-03-06T10:14Z");
+        Date pauseTime = DateUtils.parseDateOozieTZ("2009-03-06T10:04Z");
         addRecordToJobTable(jobId, startTime, endTime, pauseTime);
         new CoordActionMaterializeCommand(jobId, startTime, endTime).call();
         checkCoordActions(jobId, 1, null);
@@ -73,9 +73,9 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
     public void testActionMaterWithPauseTime2() throws Exception {
         String jobId = "0000000-" + new Date().getTime() + "-testActionMater-C";
 
-        Date startTime = DateUtils.parseDateUTC("2009-03-06T10:00Z");
-        Date endTime = DateUtils.parseDateUTC("2009-03-06T10:14Z");
-        Date pauseTime = DateUtils.parseDateUTC("2009-03-06T10:08Z");
+        Date startTime = DateUtils.parseDateOozieTZ("2009-03-06T10:00Z");
+        Date endTime = DateUtils.parseDateOozieTZ("2009-03-06T10:14Z");
+        Date pauseTime = DateUtils.parseDateOozieTZ("2009-03-06T10:08Z");
         addRecordToJobTable(jobId, startTime, endTime, pauseTime);
         new CoordActionMaterializeCommand(jobId, startTime, endTime).call();
         checkCoordActions(jobId, 2, null);
@@ -84,9 +84,9 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
     public void testActionMaterWithPauseTime3() throws Exception {
         String jobId = "0000000-" + new Date().getTime() + "-testActionMater-C";
 
-        Date startTime = DateUtils.parseDateUTC("2009-03-06T10:00Z");
-        Date endTime = DateUtils.parseDateUTC("2009-03-06T10:14Z");
-        Date pauseTime = DateUtils.parseDateUTC("2009-03-06T09:58Z");
+        Date startTime = DateUtils.parseDateOozieTZ("2009-03-06T10:00Z");
+        Date endTime = DateUtils.parseDateOozieTZ("2009-03-06T10:14Z");
+        Date pauseTime = DateUtils.parseDateOozieTZ("2009-03-06T09:58Z");
         addRecordToJobTable(jobId, startTime, endTime, pauseTime);
         new CoordActionMaterializeCommand(jobId, startTime, endTime).call();
         checkCoordActions(jobId, 0, CoordinatorJob.Status.RUNNING);
@@ -155,9 +155,9 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
                 + " <sla:should-start>5</sla:should-start>"
                 + " <sla:should-end>120</sla:should-end>"
                 + " <sla:notification-msg>Notifying User for ${coord:nominalTime()} nominal time </sla:notification-msg>"
-                + " <sla:alert-contact>abc@yahoo.com</sla:alert-contact>"
-                + " <sla:dev-contact>abc@yahoo.com</sla:dev-contact>"
-                + " <sla:qa-contact>abc@yahoo.com</sla:qa-contact>" + " <sla:se-contact>abc@yahoo.com</sla:se-contact>"
+                + " <sla:alert-contact>abc@example.com</sla:alert-contact>"
+                + " <sla:dev-contact>abc@example.com</sla:dev-contact>"
+                + " <sla:qa-contact>abc@example.com</sla:qa-contact>" + " <sla:se-contact>abc@example.com</sla:se-contact>"
                 + "</sla:info>";
         appXml += "</action>";
         appXml += "</coordinator-app>";
@@ -173,7 +173,7 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
         coordJob.setLastActionNumber(0);
         coordJob.setFrequency(1);
         try {
-            coordJob.setEndTime(DateUtils.parseDateUTC("2009-03-11T10:00Z"));
+            coordJob.setEndTime(DateUtils.parseDateOozieTZ("2009-03-11T10:00Z"));
         }
         catch (Exception e) {
             // TODO Auto-generated catch block
@@ -254,9 +254,9 @@ public class TestCoordActionMaterializeCommand extends XTestCase {
                 + " <sla:should-start>5</sla:should-start>"
                 + " <sla:should-end>120</sla:should-end>"
                 + " <sla:notification-msg>Notifying User for ${coord:nominalTime()} nominal time </sla:notification-msg>"
-                + " <sla:alert-contact>abc@yahoo.com</sla:alert-contact>"
-                + " <sla:dev-contact>abc@yahoo.com</sla:dev-contact>"
-                + " <sla:qa-contact>abc@yahoo.com</sla:qa-contact>" + " <sla:se-contact>abc@yahoo.com</sla:se-contact>"
+                + " <sla:alert-contact>abc@example.com</sla:alert-contact>"
+                + " <sla:dev-contact>abc@example.com</sla:dev-contact>"
+                + " <sla:qa-contact>abc@example.com</sla:qa-contact>" + " <sla:se-contact>abc@example.com</sla:se-contact>"
                 + "</sla:info>";
         appXml += "</action>";
         appXml += "</coordinator-app>";

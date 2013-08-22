@@ -67,12 +67,14 @@ public class CoordMaterializeTriggerService implements Service {
      */
     static class CoordMaterializeTriggerRunnable implements Runnable {
         private int materializationWindow;
+        private int lookupInterval;
         private long delay = 0;
         private List<XCallable<Void>> callables;
         private List<XCallable<Void>> delayedCallables;
 
-        public CoordMaterializeTriggerRunnable(int materializationWindow) {
+        public CoordMaterializeTriggerRunnable(int materializationWindow, int lookupInterval) {
             this.materializationWindow = materializationWindow;
+            this.lookupInterval = lookupInterval;
         }
 
         @Override
@@ -112,27 +114,27 @@ public class CoordMaterializeTriggerService implements Service {
             try {
 
                 // get current date
-                Date currDate = new Date(new Date().getTime() + CONF_LOOKUP_INTERVAL_DEFAULT * 1000);
+                Date currDate = new Date(new Date().getTime() + lookupInterval * 1000);
                 // get list of all jobs that have actions that should be materialized.
                 int materializationLimit = Services.get().getConf()
                         .getInt(CONF_MATERIALIZATION_SYSTEM_LIMIT, CONF_MATERIALIZATION_SYSTEM_LIMIT_DEFAULT);
                 CoordJobsToBeMaterializedJPAExecutor cmatcmd = new CoordJobsToBeMaterializedJPAExecutor(currDate,
                         materializationLimit);
                 List<CoordinatorJobBean> materializeJobs = jpaService.execute(cmatcmd);
-                LOG.debug("CoordMaterializeTriggerService - Curr Date= " + currDate + ", Num jobs to materialize = "
+                LOG.info("CoordMaterializeTriggerService - Curr Date= " + currDate + ", Num jobs to materialize = "
                         + materializeJobs.size());
                 for (CoordinatorJobBean coordJob : materializeJobs) {
                     Services.get().get(InstrumentationService.class).get()
                             .incr(INSTRUMENTATION_GROUP, INSTR_MAT_JOBS_COUNTER, 1);
                     int numWaitingActions = jpaService
                             .execute(new CoordActionsActiveCountJPAExecutor(coordJob.getId()));
-                    LOG.debug("Job :" + coordJob.getId() + "  numWaitingActions : " + numWaitingActions
+                    LOG.info("Job :" + coordJob.getId() + "  numWaitingActions : " + numWaitingActions
                             + " MatThrottle : " + coordJob.getMatThrottling());
                     // update lastModifiedTime so next time others might have higher chance to get pick up
                     coordJob.setLastModifiedTime(new Date());
                     jpaService.execute(new CoordJobUpdateJPAExecutor(coordJob));
                     if (numWaitingActions >= coordJob.getMatThrottling()) {
-                        LOG.debug("Materialization skipped for JobID [" + coordJob.getId() + " already waiting "
+                        LOG.info("info for JobID [" + coordJob.getId() + " already waiting "
                                 + numWaitingActions + " actions. MatThrottle is : " + coordJob.getMatThrottling());
                         continue;
                     }
@@ -175,10 +177,14 @@ public class CoordMaterializeTriggerService implements Service {
     @Override
     public void init(Services services) throws ServiceException {
         Configuration conf = services.getConf();
-        Runnable lookupTriggerJobsRunnable = new CoordMaterializeTriggerRunnable(conf.getInt(
-                CONF_MATERIALIZATION_WINDOW, CONF_MATERIALIZATION_WINDOW_DEFAULT));// Default is 1 hour
-        services.get(SchedulerService.class).schedule(lookupTriggerJobsRunnable, 10,
-                                                      conf.getInt(CONF_LOOKUP_INTERVAL, CONF_LOOKUP_INTERVAL_DEFAULT),// Default is 5 minutes
+        // default is 3600sec (1hr)
+        int materializationWindow = conf.getInt(CONF_MATERIALIZATION_WINDOW, CONF_MATERIALIZATION_WINDOW_DEFAULT);
+        // default is 300sec (5min)
+        int lookupInterval = Services.get().getConf().getInt(CONF_LOOKUP_INTERVAL, CONF_LOOKUP_INTERVAL_DEFAULT);
+
+        Runnable lookupTriggerJobsRunnable = new CoordMaterializeTriggerRunnable(materializationWindow, lookupInterval);
+
+        services.get(SchedulerService.class).schedule(lookupTriggerJobsRunnable, 10, lookupInterval,
                                                       SchedulerService.Unit.SEC);
     }
 

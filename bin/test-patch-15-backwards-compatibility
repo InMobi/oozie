@@ -1,0 +1,120 @@
+#!/bin/bash
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
+if [ "${TESTPATCHDEBUG}" == "true" ] ; then
+  set -x
+fi
+
+BASEDIR=$(pwd)
+TASKNAME="BACKWARDS_COMPATIBILITY"
+OP=""
+TEMPDIR=""
+REPORTDIR=""
+SUMMARYFILE=""
+PATCHFILE=""
+
+###############################################################################
+cleanupAndExit() {
+  exit $1
+}
+###############################################################################
+printUsage() {
+  echo "Usage: $0 --taskname | (--op=pre|post|report --tempdir=<TEMP DIR> --reportdir=<REPORT DIR> --summaryfile=<SUMMARY FILE>)"
+  echo
+}
+###############################################################################
+parseArgs() {
+  for i in $*
+  do
+    case $i in
+    --taskname)
+      echo ${TASKNAME}
+      exit 0
+      ;;
+    --op=*)
+      OP=${i#*=}
+      ;;
+    --tempdir=*)
+      TEMPDIR=${i#*=}
+      ;;
+    --reportdir=*)
+      REPORTDIR=${i#*=}
+      ;;
+    --summaryfile=*)
+      SUMMARYFILE=${i#*=}
+      ;;
+    --patchfile=*)
+      PATCHFILE=${i#*=}
+      ;;
+    esac
+  done
+  if [[ "${TASKNAME}" == "" || "${OP}" == "" || "${TEMPDIR}" == "" || "${REPORTDIR}" == "" || "${SUMMARYFILE}" == "" || "${PATCHFILE}" == "" ]] ; then
+    echo "Missing options"
+    echo
+    printUsage
+    cleanupAndExit 1
+  fi
+  if [[ "${OP}" != "pre" && "${OP}" != "post" && "${OP}" != "report" ]] ; then
+    echo "Invalid operation"
+    echo
+    printUsage
+    cleanupAndExit 1
+  fi
+}
+###############################################################################
+checkJPAAnnotations() {
+  annotations=`grep -c -E "^(\+|\-).*(@Column|@Lob|@Basic|@Entity|@Transient)" ${PATCHFILE}`
+  if [[ ${annotations} != 0 ]] ; then
+    REPORT+=("{color:red}-1{color} the patch seems to change ${annotations} line(s) with JPA Entity/Colum/Basic/Lob/Transient annotations")
+  else
+    REPORT+=("{color:green}+1{color} the patch does not change any JPA Entity/Colum/Basic/Lob/Transient annotations")
+  fi
+}
+###############################################################################
+checkJPAFiles() {
+  persistenceXml=`grep -c -i -E '^\+\+\+.*/persistence.xml' ${PATCHFILE}`
+  ormXml=`grep -c -i -E '^\+\+\+.*/*-orm.xml' ${PATCHFILE}`
+  jpaFiles=`expr $persistenceXml + $ormXml`
+  if [[ ${jpaFiles} != 0 ]] ; then
+    REPORT+=("{color:red}-1{color} the patch modifies ${jpaFiles} JPA file(s), persistence.xml or *-orm.xml")
+  else
+    REPORT+=("{color:green}+1{color} the patch does not modify JPA files")
+  fi
+}
+###############################################################################
+
+parseArgs "$@"
+
+case $OP in
+  pre)
+    ;;
+  post)
+    ;;
+  report)
+    REPORT=()
+    checkJPAAnnotations
+    checkJPAFiles
+    total=`expr $annotations + $jpaFiles`
+    if [[ $total == 0 ]] ; then
+      echo "{color:green}+1{color} ${TASKNAME}" >> $SUMMARYFILE
+    else
+      echo "{color:red}-1{color} ${TASKNAME}" >> $SUMMARYFILE
+    fi
+    for line in "${REPORT[@]}" ; do
+      echo ".    ${line}" >> $SUMMARYFILE
+    done
+    ;;
+esac
+
+exit 0

@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
 import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
@@ -50,6 +52,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.oozie.BuildInfo;
 import org.apache.oozie.client.AuthOozieClient;
+import org.apache.oozie.client.BulkResponse;
 import org.apache.oozie.client.BundleJob;
 import org.apache.oozie.client.CoordinatorAction;
 import org.apache.oozie.client.CoordinatorJob;
@@ -74,6 +77,7 @@ import org.xml.sax.SAXException;
 public class OozieCLI {
     public static final String ENV_OOZIE_URL = "OOZIE_URL";
     public static final String ENV_OOZIE_DEBUG = "OOZIE_DEBUG";
+    public static final String ENV_OOZIE_TIME_ZONE = "OOZIE_TIMEZONE";
     public static final String WS_HEADER_PREFIX = "header:";
 
     public static final String HELP_CMD = "help";
@@ -84,6 +88,8 @@ public class OozieCLI {
     public static final String VALIDATE_CMD = "validate";
     public static final String SLA_CMD = "sla";
     public static final String PIG_CMD = "pig";
+    public static final String MR_CMD = "mapreduce";
+    public static final String INFO_CMD = "info";
 
     public static final String OOZIE_OPTION = "oozie";
     public static final String CONFIG_OPTION = "config";
@@ -113,6 +119,7 @@ public class OozieCLI {
     public static final String VERSION_OPTION = "version";
     public static final String STATUS_OPTION = "status";
     public static final String LOCAL_TIME_OPTION = "localtime";
+    public static final String TIME_ZONE_OPTION = "timezone";
     public static final String QUEUE_DUMP_OPTION = "queuedump";
     public static final String RERUN_COORD_OPTION = "coordinator";
     public static final String DATE_OPTION = "date";
@@ -123,17 +130,32 @@ public class OozieCLI {
 
     public static final String VERBOSE_OPTION = "verbose";
     public static final String VERBOSE_DELIMITER = "\t";
+    public static final String DEBUG_OPTION = "debug";
 
     public static final String PIGFILE_OPTION = "file";
 
+    public static final String INFO_TIME_ZONES_OPTION = "timezones";
+
+    public static final String BULK_OPTION = "bulk";
+
     private static final String[] OOZIE_HELP = {
             "the env variable '" + ENV_OOZIE_URL + "' is used as default value for the '-" + OOZIE_OPTION + "' option",
+            "the env variable '" + ENV_OOZIE_TIME_ZONE + "' is used as default value for the '-" + TIME_ZONE_OPTION + "' option",
             "custom headers for Oozie web services can be specified using '-D" + WS_HEADER_PREFIX + "NAME=VALUE'" };
 
     private static final String RULER;
     private static final int LINE_WIDTH = 132;
 
     private boolean used;
+
+    private static final String INSTANCE_SEPARATOR = "#";
+
+    private static final String MAPRED_MAPPER = "mapred.mapper.class";
+    private static final String MAPRED_REDUCER = "mapred.reducer.class";
+    private static final String MAPRED_INPUT = "mapred.input.dir";
+    private static final String MAPRED_OUTPUT = "mapred.output.dir";
+
+    private static final Pattern GMT_OFFSET_SHORTEN_PATTERN = Pattern.compile("(.* )GMT((?:-|\\+)\\d{2}:\\d{2})");
 
     static {
         StringBuilder sb = new StringBuilder();
@@ -217,10 +239,11 @@ public class OozieCLI {
         Option config = new Option(CONFIG_OPTION, true, "job configuration file '.xml' or '.properties'");
         Option submit = new Option(SUBMIT_OPTION, false, "submit a job");
         Option run = new Option(RUN_OPTION, false, "run a job");
+        Option debug = new Option(DEBUG_OPTION, false, "Use debug mode to see debugging statements on stdout");
         Option rerun = new Option(RERUN_OPTION, true,
                 "rerun a job  (coordinator requires -action or -date, bundle requires -coordinator or -date)");
-        Option dryrun = new Option(DRYRUN_OPTION, false,
-                "Supported in Oozie-2.0 or later versions ONLY - dryrun or test run a coordinator job, job is not queued");
+        Option dryrun = new Option(DRYRUN_OPTION, false, "Dryrun a workflow (since 3.3.2) or coordinator (since 2.0) job without"
+                + " actually executing it");
         Option start = new Option(START_OPTION, true, "start a job");
         Option suspend = new Option(SUSPEND_OPTION, true, "suspend a job");
         Option resume = new Option(RESUME_OPTION, true, "resume a job");
@@ -233,7 +256,10 @@ public class OozieCLI {
         Option len = new Option(LEN_OPTION, true, "number of actions (default TOTAL ACTIONS, requires -info)");
         Option filter = new Option(FILTER_OPTION, true,
                 "status=<S1>[;status=<S2>]* (All Coordinator actions satisfying any one of the status filters will be retreived. Currently, only supported for Coordinator job)");
-        Option localtime = new Option(LOCAL_TIME_OPTION, false, "use local time (default GMT)");
+        Option localtime = new Option(LOCAL_TIME_OPTION, false, "use local time (same as passing your time zone to -" +
+                TIME_ZONE_OPTION + "). Overrides -" + TIME_ZONE_OPTION + " option");
+        Option timezone = new Option(TIME_ZONE_OPTION, true,
+                "use time zone with the specified ID (default GMT).\nSee 'oozie info -timezones' for a list");
         Option log = new Option(LOG_OPTION, true, "job log");
         Option definition = new Option(DEFINITION_OPTION, true, "job definition");
         Option config_content = new Option(CONFIG_CONTENT_OPTION, true, "job configuration");
@@ -274,7 +300,9 @@ public class OozieCLI {
         jobOptions.addOption(property);
         jobOptions.addOption(changeValue);
         jobOptions.addOption(localtime);
+        jobOptions.addOption(timezone);
         jobOptions.addOption(verbose);
+        jobOptions.addOption(debug);
         jobOptions.addOption(offset);
         jobOptions.addOption(len);
         jobOptions.addOption(filter);
@@ -298,40 +326,52 @@ public class OozieCLI {
         Option jobtype = new Option(JOBTYPE_OPTION, true,
                 "job type ('Supported in Oozie-2.0 or later versions ONLY - 'coordinator' or 'bundle' or 'wf'(default))");
         Option len = new Option(LEN_OPTION, true, "number of jobs (default '100')");
-        Option filter = new Option(FILTER_OPTION, true, "user=<U>;name=<N>;group=<G>;status=<S>;frequency=<F>;unit=<M> " +
+        Option filter = new Option(FILTER_OPTION, true, "user=<U>\\;name=<N>\\;group=<G>\\;status=<S>\\;frequency=<F>\\;unit=<M> " +
                         "(Valid unit values are 'months', 'days', 'hours' or 'minutes'.)");
-        Option localtime = new Option(LOCAL_TIME_OPTION, false, "use local time (default GMT)");
+        Option localtime = new Option(LOCAL_TIME_OPTION, false, "use local time (same as passing your time zone to -" +
+                TIME_ZONE_OPTION + "). Overrides -" + TIME_ZONE_OPTION + " option");
+        Option timezone = new Option(TIME_ZONE_OPTION, true,
+                "use time zone with the specified ID (default GMT).\nSee 'oozie info -timezones' for a list");
         Option verbose = new Option(VERBOSE_OPTION, false, "verbose mode");
         Option doAs = new Option(DO_AS_OPTION, true, "doAs user, impersonates as the specified user");
+        Option bulkMonitor = new Option(BULK_OPTION, true, "key-value pairs to filter bulk jobs response. e.g. bundle=<B>\\;" +
+                "coordinators=<C>\\;actionstatus=<S>\\;startcreatedtime=<SC>\\;endcreatedtime=<EC>\\;" +
+                "startscheduledtime=<SS>\\;endscheduledtime=<ES>\\; coordinators and actionstatus can be multiple comma separated values" +
+                "bundle and coordinators are 'names' of those jobs. Bundle name is mandatory, other params are optional");
         start.setType(Integer.class);
         len.setType(Integer.class);
         Options jobsOptions = new Options();
         jobsOptions.addOption(oozie);
         jobsOptions.addOption(doAs);
         jobsOptions.addOption(localtime);
+        jobsOptions.addOption(timezone);
         jobsOptions.addOption(start);
         jobsOptions.addOption(len);
         jobsOptions.addOption(oozie);
         jobsOptions.addOption(filter);
         jobsOptions.addOption(jobtype);
         jobsOptions.addOption(verbose);
+        jobsOptions.addOption(bulkMonitor);
         addAuthOptions(jobsOptions);
         return jobsOptions;
     }
 
     /**
      * Create option for command line option 'sla'
+     *
      * @return sla options
      */
     protected Options createSlaOptions() {
         Option oozie = new Option(OOZIE_OPTION, true, "Oozie URL");
         Option start = new Option(OFFSET_OPTION, true, "start offset (default '0')");
-        Option len = new Option(LEN_OPTION, true, "number of results (default '100')");
+        Option len = new Option(LEN_OPTION, true, "number of results (default '100', max '1000')");
+        Option filter = new Option(FILTER_OPTION, true, "filter of SLA events");
         start.setType(Integer.class);
         len.setType(Integer.class);
         Options slaOptions = new Options();
         slaOptions.addOption(start);
         slaOptions.addOption(len);
+        slaOptions.addOption(filter);
         slaOptions.addOption(oozie);
         addAuthOptions(slaOptions);
         return slaOptions;
@@ -360,6 +400,37 @@ public class OozieCLI {
     }
 
     /**
+     * Create option for command line option 'info'
+     * @return info options
+     */
+    protected Options createInfoOptions() {
+        Option timezones = new Option(INFO_TIME_ZONES_OPTION, false, "display a list of available time zones");
+        Options infoOptions = new Options();
+        infoOptions.addOption(timezones);
+        return infoOptions;
+    }
+
+    /**
+     * Create option for command line option 'mapreduce'
+     * @return mapreduce options
+     */
+    @SuppressWarnings("static-access")
+    protected Options createMROptions() {
+        Option oozie = new Option(OOZIE_OPTION, true, "Oozie URL");
+        Option config = new Option(CONFIG_OPTION, true, "job configuration file '.properties'");
+        Option property = OptionBuilder.withArgName("property=value").hasArgs(2).withValueSeparator().withDescription(
+                "set/override value for given property").create("D");
+        Option doAs = new Option(DO_AS_OPTION, true, "doAs user, impersonates as the specified user");
+        Options mrOptions = new Options();
+        mrOptions.addOption(oozie);
+        mrOptions.addOption(doAs);
+        mrOptions.addOption(config);
+        mrOptions.addOption(property);
+        addAuthOptions(mrOptions);
+        return mrOptions;
+    }
+
+    /**
      * Run a CLI programmatically.
      * <p/>
      * It does not exit the JVM.
@@ -376,7 +447,7 @@ public class OozieCLI {
         used = true;
 
         final CLIParser parser = new CLIParser(OOZIE_OPTION, getCLIHelp());
-        parser.addCommand(HELP_CMD, "", "display usage", new Options(), false);
+        parser.addCommand(HELP_CMD, "", "display usage for all commands or specified command", new Options(), false);
         parser.addCommand(VERSION_CMD, "", "show client version", new Options(), false);
         parser.addCommand(JOB_CMD, "", "job operations", createJobOptions(), false);
         parser.addCommand(JOBS_CMD, "", "jobs status", createJobsOptions(), false);
@@ -385,6 +456,8 @@ public class OozieCLI {
         parser.addCommand(SLA_CMD, "", "sla operations (Supported in Oozie-2.0 or later)", createSlaOptions(), false);
         parser.addCommand(PIG_CMD, "-X ", "submit a pig job, everything after '-X' are pass-through parameters to pig",
                 createPigOptions(), true);
+        parser.addCommand(INFO_CMD, "", "get more detailed info about specific topics", createInfoOptions(), false);
+        parser.addCommand(MR_CMD, "", "submit a mapreduce job", createMROptions(), false);
 
         try {
             final CLIParser.Command command = parser.parse(args);
@@ -425,7 +498,7 @@ public class OozieCLI {
 
     private void processCommand(CLIParser parser, CLIParser.Command command) throws Exception {
         if (command.getName().equals(HELP_CMD)) {
-            parser.showHelp();
+            parser.showHelp(command.getCommandLine());
         }
         else if (command.getName().equals(JOB_CMD)) {
             jobCommand(command.getCommandLine());
@@ -448,6 +521,12 @@ public class OozieCLI {
         else if (command.getName().equals(PIG_CMD)) {
             pigCommand(command.getCommandLine());
         }
+        else if (command.getName().equals(INFO_CMD)) {
+            infoCommand(command.getCommandLine());
+        }
+        else if (command.getName().equals(MR_CMD)){
+            mrCommand(command.getCommandLine());
+        }
     }
     protected String getOozieUrl(CommandLine commandLine) {
         String url = commandLine.getOptionValue(OOZIE_OPTION);
@@ -459,6 +538,21 @@ public class OozieCLI {
             }
         }
         return url;
+    }
+
+    private String getTimeZoneId(CommandLine commandLine)
+    {
+        if (commandLine.hasOption(LOCAL_TIME_OPTION)) {
+            return null;
+        }
+        if (commandLine.hasOption(TIME_ZONE_OPTION)) {
+            return commandLine.getOptionValue(TIME_ZONE_OPTION);
+        }
+        String timeZoneId = System.getenv(ENV_OOZIE_TIME_ZONE);
+        if (timeZoneId != null) {
+            return timeZoneId;
+        }
+        return "GMT";
     }
 
     // Canibalized from Hadoop <code>Configuration.loadResource()</code>.
@@ -613,11 +707,11 @@ public class OozieCLI {
     protected XOozieClient createXOozieClient(CommandLine commandLine) throws OozieCLIException {
         XOozieClient wc = new AuthOozieClient(getOozieUrl(commandLine), getAuthOption(commandLine));
         addHeader(wc);
-        setDebugMode(wc);
+        setDebugMode(wc,commandLine.hasOption(DEBUG_OPTION));
         return wc;
     }
 
-    protected void setDebugMode(OozieClient wc) {
+    protected void setDebugMode(OozieClient wc, boolean debugOpt) {
 
         String debug = System.getenv(ENV_OOZIE_DEBUG);
         if (debug != null && !debug.isEmpty()) {
@@ -630,6 +724,9 @@ public class OozieCLI {
                 ex.printStackTrace();
             }
             wc.setDebugMode(debugVal);
+        }
+        else if(debugOpt){  // CLI argument "-debug" used
+            wc.setDebugMode(1);
         }
     }
 
@@ -651,19 +748,24 @@ public class OozieCLI {
                 wc.start(commandLine.getOptionValue(START_OPTION));
             }
             else if (options.contains(DRYRUN_OPTION)) {
-                String[] dryrunStr = wc.dryrun(getConfiguration(wc, commandLine)).split("action for new instance");
-                int arraysize = dryrunStr.length;
-                System.out.println("***coordJob after parsing: ***");
-                System.out.println(dryrunStr[0]);
-                int aLen = dryrunStr.length - 1;
-                if (aLen < 0) {
-                    aLen = 0;
-                }
-                System.out.println("***total coord actions is " + aLen + " ***");
-                for (int i = 1; i <= arraysize - 1; i++) {
-                    System.out.println(RULER);
-                    System.out.println("coordAction instance: " + i + ":");
-                    System.out.println(dryrunStr[i]);
+                String dryrunStr = wc.dryrun(getConfiguration(wc, commandLine));
+                if (dryrunStr.equals("OK")) {  // workflow
+                    System.out.println("OK");
+                } else {                        // coordinator
+                    String[] dryrunStrs = dryrunStr.split("action for new instance");
+                    int arraysize = dryrunStrs.length;
+                    System.out.println("***coordJob after parsing: ***");
+                    System.out.println(dryrunStrs[0]);
+                    int aLen = dryrunStrs.length - 1;
+                    if (aLen < 0) {
+                        aLen = 0;
+                    }
+                    System.out.println("***total coord actions is " + aLen + " ***");
+                    for (int i = 1; i <= arraysize - 1; i++) {
+                        System.out.println(RULER);
+                        System.out.println("coordAction instance: " + i + ":");
+                        System.out.println(dryrunStrs[i]);
+                    }
                 }
             }
             else if (options.contains(SUSPEND_OPTION)) {
@@ -751,13 +853,14 @@ public class OozieCLI {
                 }
             }
             else if (options.contains(INFO_OPTION)) {
+                String timeZoneId = getTimeZoneId(commandLine);
                 if (commandLine.getOptionValue(INFO_OPTION).endsWith("-B")) {
                     String filter = commandLine.getOptionValue(FILTER_OPTION);
                     if (filter != null) {
                         throw new OozieCLIException("Filter option is currently not supported for a Bundle job");
                     }
-                    printBundleJob(wc.getBundleJobInfo(commandLine.getOptionValue(INFO_OPTION)), options
-                            .contains(LOCAL_TIME_OPTION), options.contains(VERBOSE_OPTION));
+                    printBundleJob(wc.getBundleJobInfo(commandLine.getOptionValue(INFO_OPTION)), timeZoneId,
+                            options.contains(VERBOSE_OPTION));
                 }
                 else if (commandLine.getOptionValue(INFO_OPTION).endsWith("-C")) {
                     String s = commandLine.getOptionValue(OFFSET_OPTION);
@@ -765,24 +868,23 @@ public class OozieCLI {
                     s = commandLine.getOptionValue(LEN_OPTION);
                     int len = Integer.parseInt((s != null) ? s : "0");
                     String filter = commandLine.getOptionValue(FILTER_OPTION);
-                    printCoordJob(wc.getCoordJobInfo(commandLine.getOptionValue(INFO_OPTION), filter, start, len), options
-                            .contains(LOCAL_TIME_OPTION), options.contains(VERBOSE_OPTION));
+                    printCoordJob(wc.getCoordJobInfo(commandLine.getOptionValue(INFO_OPTION), filter, start, len), timeZoneId,
+                            options.contains(VERBOSE_OPTION));
                 }
                 else if (commandLine.getOptionValue(INFO_OPTION).contains("-C@")) {
                     String filter = commandLine.getOptionValue(FILTER_OPTION);
                     if (filter != null) {
                         throw new OozieCLIException("Filter option is not supported for a Coordinator action");
                     }
-                    printCoordAction(wc.getCoordActionInfo(commandLine.getOptionValue(INFO_OPTION)), options
-                            .contains(LOCAL_TIME_OPTION));
+                    printCoordAction(wc.getCoordActionInfo(commandLine.getOptionValue(INFO_OPTION)), timeZoneId);
                 }
                 else if (commandLine.getOptionValue(INFO_OPTION).contains("-W@")) {
                     String filter = commandLine.getOptionValue(FILTER_OPTION);
                     if (filter != null) {
                         throw new OozieCLIException("Filter option is not supported for a Workflow action");
                     }
-                    printWorkflowAction(wc.getWorkflowActionInfo(commandLine.getOptionValue(INFO_OPTION)),
-                            options.contains(LOCAL_TIME_OPTION), options.contains(VERBOSE_OPTION));
+                    printWorkflowAction(wc.getWorkflowActionInfo(commandLine.getOptionValue(INFO_OPTION)), timeZoneId,
+                            options.contains(VERBOSE_OPTION));
                 }
                 else {
                     String filter = commandLine.getOptionValue(FILTER_OPTION);
@@ -795,8 +897,8 @@ public class OozieCLI {
                     String jobtype = commandLine.getOptionValue(JOBTYPE_OPTION);
                     jobtype = (jobtype != null) ? jobtype : "wf";
                     int len = Integer.parseInt((s != null) ? s : "0");
-                    printJob(wc.getJobInfo(commandLine.getOptionValue(INFO_OPTION), start, len), options
-                            .contains(LOCAL_TIME_OPTION), options.contains(VERBOSE_OPTION));
+                    printJob(wc.getJobInfo(commandLine.getOptionValue(INFO_OPTION), start, len), timeZoneId,
+                            options.contains(VERBOSE_OPTION));
                 }
             }
             else if (options.contains(LOG_OPTION)) {
@@ -854,15 +956,19 @@ public class OozieCLI {
         }
     }
 
-    private void printCoordJob(CoordinatorJob coordJob, boolean localtime, boolean verbose) {
+    private void printCoordJob(CoordinatorJob coordJob, String timeZoneId, boolean verbose) {
         System.out.println("Job ID : " + coordJob.getId());
 
         System.out.println(RULER);
 
         List<CoordinatorAction> actions = coordJob.getActions();
-        System.out.println("Job Name : " + maskIfNull(coordJob.getAppName()));
-        System.out.println("App Path : " + maskIfNull(coordJob.getAppPath()));
-        System.out.println("Status   : " + coordJob.getStatus());
+        System.out.println("Job Name    : " + maskIfNull(coordJob.getAppName()));
+        System.out.println("App Path    : " + maskIfNull(coordJob.getAppPath()));
+        System.out.println("Status      : " + coordJob.getStatus());
+        System.out.println("Start Time  : " + maskDate(coordJob.getStartTime(), timeZoneId, false));
+        System.out.println("End Time    : " + maskDate(coordJob.getEndTime(), timeZoneId, false));
+        System.out.println("Pause Time  : " + maskDate(coordJob.getPauseTime(), timeZoneId, false));
+        System.out.println("Concurrency : " + coordJob.getConcurrency());
         System.out.println(RULER);
 
         if (verbose) {
@@ -875,16 +981,20 @@ public class OozieCLI {
             System.out.println(RULER);
 
             for (CoordinatorAction action : actions) {
+                String missingDep = action.getMissingDependencies();
+                if(missingDep != null && !missingDep.isEmpty()) {
+                    missingDep = missingDep.split(INSTANCE_SEPARATOR)[0];
+                }
                 System.out.println(maskIfNull(action.getId()) + VERBOSE_DELIMITER + action.getActionNumber()
                         + VERBOSE_DELIMITER + maskIfNull(action.getConsoleUrl()) + VERBOSE_DELIMITER
                         + maskIfNull(action.getErrorCode()) + VERBOSE_DELIMITER + maskIfNull(action.getErrorMessage())
                         + VERBOSE_DELIMITER + maskIfNull(action.getExternalId()) + VERBOSE_DELIMITER
                         + maskIfNull(action.getExternalStatus()) + VERBOSE_DELIMITER + maskIfNull(action.getJobId())
                         + VERBOSE_DELIMITER + maskIfNull(action.getTrackerUri()) + VERBOSE_DELIMITER
-                        + maskDate(action.getCreatedTime(), localtime) + VERBOSE_DELIMITER
-                        + maskDate(action.getNominalTime(), localtime) + action.getStatus() + VERBOSE_DELIMITER
-                        + maskDate(action.getLastModifiedTime(), localtime) + VERBOSE_DELIMITER
-                        + maskIfNull(action.getMissingDependencies()));
+                        + maskDate(action.getCreatedTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                        + maskDate(action.getNominalTime(), timeZoneId, verbose) + action.getStatus() + VERBOSE_DELIMITER
+                        + maskDate(action.getLastModifiedTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                        + maskIfNull(missingDep));
 
                 System.out.println(RULER);
             }
@@ -896,15 +1006,15 @@ public class OozieCLI {
             for (CoordinatorAction action : actions) {
                 System.out.println(String.format(COORD_ACTION_FORMATTER, maskIfNull(action.getId()),
                         action.getStatus(), maskIfNull(action.getExternalId()), maskIfNull(action.getErrorCode()),
-                        maskDate(action.getCreatedTime(), localtime), maskDate(action.getNominalTime(), localtime),
-                        maskDate(action.getLastModifiedTime(), localtime)));
+                        maskDate(action.getCreatedTime(), timeZoneId, verbose), maskDate(action.getNominalTime(), timeZoneId, verbose),
+                        maskDate(action.getLastModifiedTime(), timeZoneId, verbose)));
 
                 System.out.println(RULER);
             }
         }
     }
 
-    private void printBundleJob(BundleJob bundleJob, boolean localtime, boolean verbose) {
+    private void printBundleJob(BundleJob bundleJob, String timeZoneId, boolean verbose) {
         System.out.println("Job ID : " + bundleJob.getId());
 
         System.out.println(RULER);
@@ -921,15 +1031,15 @@ public class OozieCLI {
         System.out.println(RULER);
 
         for (CoordinatorJob job : coordinators) {
-            System.out.println(String.format(BUNDLE_COORD_JOBS_FORMATTER, maskIfNull(job.getId()), job.getStatus(), job
-                    .getFrequency(), job.getTimeUnit(), maskDate(job.getStartTime(), localtime), maskDate(job
-                    .getNextMaterializedTime(), localtime)));
+            System.out.println(String.format(BUNDLE_COORD_JOBS_FORMATTER, maskIfNull(job.getId()), job.getStatus(),
+                    job.getFrequency(), job.getTimeUnit(), maskDate(job.getStartTime(), timeZoneId, verbose),
+                    maskDate(job.getNextMaterializedTime(), timeZoneId, verbose)));
 
             System.out.println(RULER);
         }
     }
 
-    private void printCoordAction(CoordinatorAction coordAction, boolean contains) {
+    private void printCoordAction(CoordinatorAction coordAction, String timeZoneId) {
         System.out.println("ID : " + maskIfNull(coordAction.getId()));
 
         System.out.println(RULER);
@@ -942,11 +1052,15 @@ public class OozieCLI {
         System.out.println("External Status      : " + maskIfNull(coordAction.getExternalStatus()));
         System.out.println("Job ID               : " + maskIfNull(coordAction.getJobId()));
         System.out.println("Tracker URI          : " + maskIfNull(coordAction.getTrackerUri()));
-        System.out.println("Created              : " + maskDate(coordAction.getCreatedTime(), contains));
-        System.out.println("Nominal Time         : " + maskDate(coordAction.getNominalTime(), contains));
+        System.out.println("Created              : " + maskDate(coordAction.getCreatedTime(), timeZoneId, false));
+        System.out.println("Nominal Time         : " + maskDate(coordAction.getNominalTime(), timeZoneId, false));
         System.out.println("Status               : " + coordAction.getStatus());
-        System.out.println("Last Modified        : " + maskDate(coordAction.getLastModifiedTime(), contains));
-        System.out.println("Missing Dependencies : " + maskIfNull(coordAction.getMissingDependencies()));
+        System.out.println("Last Modified        : " + maskDate(coordAction.getLastModifiedTime(), timeZoneId, false));
+        String missingDep = coordAction.getMissingDependencies();
+        if(missingDep != null && !missingDep.isEmpty()) {
+            missingDep = missingDep.split(INSTANCE_SEPARATOR)[0];
+        }
+        System.out.println("First Missing Dependency : " + maskIfNull(missingDep));
 
         System.out.println(RULER);
     }
@@ -957,7 +1071,7 @@ public class OozieCLI {
             System.out.println(RULER);
             for (CoordinatorAction action : actions) {
                 System.out.println(maskIfNull(action.getId()) + VERBOSE_DELIMITER
-                        + maskDate(action.getNominalTime(), false));
+                        + maskDate(action.getNominalTime(), null,false));
             }
         }
         else {
@@ -965,7 +1079,7 @@ public class OozieCLI {
         }
     }
 
-    private void printWorkflowAction(WorkflowAction action, boolean contains, boolean verbose) {
+    private void printWorkflowAction(WorkflowAction action, String timeZoneId, boolean verbose) {
         System.out.println("ID : " + maskIfNull(action.getId()));
 
         System.out.println(RULER);
@@ -979,9 +1093,9 @@ public class OozieCLI {
         System.out.println("Retries           : " + action.getRetries());
         System.out.println("Tracker URI       : " + maskIfNull(action.getTrackerUri()));
         System.out.println("Type              : " + maskIfNull(action.getType()));
-        System.out.println("Started           : " + maskDate(action.getStartTime(), contains));
+        System.out.println("Started           : " + maskDate(action.getStartTime(), timeZoneId, verbose));
         System.out.println("Status            : " + action.getStatus());
-        System.out.println("Ended             : " + maskDate(action.getEndTime(), contains));
+        System.out.println("Ended             : " + maskDate(action.getEndTime(), timeZoneId, verbose));
 
         if (verbose) {
             System.out.println("External Stats    : " + action.getStats());
@@ -997,9 +1111,10 @@ public class OozieCLI {
     private static final String BUNDLE_COORD_JOBS_FORMATTER = "%-41s%-10s%-5s%-13s%-24s%-24s";
 
     private static final String WORKFLOW_ACTION_FORMATTER = "%-78s%-10s%-23s%-11s%-10s";
-    private static final String COORD_ACTION_FORMATTER = "%-43s%-10s%-37s%-10s%-17s%-17s";
+    private static final String COORD_ACTION_FORMATTER = "%-43s%-10s%-37s%-10s%-21s%-21s";
+    private static final String BULK_RESPONSE_FORMATTER = "%-41s%-41s%-37s%-37s%-13s%-21s%-24s";
 
-    private void printJob(WorkflowJob job, boolean localtime, boolean verbose) throws IOException {
+    private void printJob(WorkflowJob job, String timeZoneId, boolean verbose) throws IOException {
         System.out.println("Job ID : " + maskIfNull(job.getId()));
 
         System.out.println(RULER);
@@ -1010,10 +1125,10 @@ public class OozieCLI {
         System.out.println("Run           : " + job.getRun());
         System.out.println("User          : " + maskIfNull(job.getUser()));
         System.out.println("Group         : " + maskIfNull(job.getGroup()));
-        System.out.println("Created       : " + maskDate(job.getCreatedTime(), localtime));
-        System.out.println("Started       : " + maskDate(job.getStartTime(), localtime));
-        System.out.println("Last Modified : " + maskDate(job.getLastModifiedTime(), localtime));
-        System.out.println("Ended         : " + maskDate(job.getEndTime(), localtime));
+        System.out.println("Created       : " + maskDate(job.getCreatedTime(), timeZoneId, verbose));
+        System.out.println("Started       : " + maskDate(job.getStartTime(), timeZoneId, verbose));
+        System.out.println("Last Modified : " + maskDate(job.getLastModifiedTime(), timeZoneId, verbose));
+        System.out.println("Ended         : " + maskDate(job.getEndTime(), timeZoneId, verbose));
         System.out.println("CoordAction ID: " + maskIfNull(job.getParentId()));
 
         List<WorkflowAction> actions = job.getActions();
@@ -1040,8 +1155,9 @@ public class OozieCLI {
                             + maskIfNull(action.getExternalStatus()) + VERBOSE_DELIMITER + maskIfNull(action.getName())
                             + VERBOSE_DELIMITER + action.getRetries() + VERBOSE_DELIMITER
                             + maskIfNull(action.getTrackerUri()) + VERBOSE_DELIMITER + maskIfNull(action.getType())
-                            + VERBOSE_DELIMITER + maskDate(action.getStartTime(), localtime) + VERBOSE_DELIMITER
-                            + action.getStatus() + VERBOSE_DELIMITER + maskDate(action.getEndTime(), localtime));
+                            + VERBOSE_DELIMITER + maskDate(action.getStartTime(), timeZoneId, verbose)
+                            + VERBOSE_DELIMITER + action.getStatus() + VERBOSE_DELIMITER
+                            + maskDate(action.getEndTime(), timeZoneId, verbose));
 
                     System.out.println(RULER);
                 }
@@ -1076,20 +1192,23 @@ public class OozieCLI {
         int start = Integer.parseInt((s != null) ? s : "0");
         s = commandLine.getOptionValue(LEN_OPTION);
         String jobtype = commandLine.getOptionValue(JOBTYPE_OPTION);
+        String timeZoneId = getTimeZoneId(commandLine);
         jobtype = (jobtype != null) ? jobtype : "wf";
         int len = Integer.parseInt((s != null) ? s : "0");
+        String bulkFilterString = commandLine.getOptionValue(BULK_OPTION);
+
         try {
-            if (jobtype.toLowerCase().contains("wf")) {
-                printJobs(wc.getJobsInfo(filter, start, len), commandLine.hasOption(LOCAL_TIME_OPTION), commandLine
-                        .hasOption(VERBOSE_OPTION));
+            if (bulkFilterString != null) {
+                printBulkJobs(wc.getBulkInfo(bulkFilterString, start, len), timeZoneId);
+            }
+            else if (jobtype.toLowerCase().contains("wf")) {
+                printJobs(wc.getJobsInfo(filter, start, len), timeZoneId, commandLine.hasOption(VERBOSE_OPTION));
             }
             else if (jobtype.toLowerCase().startsWith("coord")) {
-                printCoordJobs(wc.getCoordJobsInfo(filter, start, len), commandLine.hasOption(LOCAL_TIME_OPTION),
-                        commandLine.hasOption(VERBOSE_OPTION));
+                printCoordJobs(wc.getCoordJobsInfo(filter, start, len), timeZoneId, commandLine.hasOption(VERBOSE_OPTION));
             }
             else if (jobtype.toLowerCase().startsWith("bundle")) {
-                printBundleJobs(wc.getBundleJobsInfo(filter, start, len), commandLine.hasOption(LOCAL_TIME_OPTION),
-                        commandLine.hasOption(VERBOSE_OPTION));
+                printBundleJobs(wc.getBundleJobsInfo(filter, start, len), timeZoneId, commandLine.hasOption(VERBOSE_OPTION));
             }
 
         }
@@ -1098,7 +1217,7 @@ public class OozieCLI {
         }
     }
 
-    private void printCoordJobs(List<CoordinatorJob> jobs, boolean localtime, boolean verbose) throws IOException {
+    private void printCoordJobs(List<CoordinatorJob> jobs, String timeZoneId, boolean verbose) throws IOException {
         if (jobs != null && jobs.size() > 0) {
             if (verbose) {
                 System.out.println("Job ID" + VERBOSE_DELIMITER + "App Name" + VERBOSE_DELIMITER + "App Path"
@@ -1116,10 +1235,11 @@ public class OozieCLI {
                             + VERBOSE_DELIMITER + maskIfNull(job.getGroup()) + VERBOSE_DELIMITER + job.getConcurrency()
                             + VERBOSE_DELIMITER + job.getFrequency() + VERBOSE_DELIMITER + job.getTimeUnit()
                             + VERBOSE_DELIMITER + maskIfNull(job.getTimeZone()) + VERBOSE_DELIMITER + job.getTimeout()
-                            + VERBOSE_DELIMITER + maskDate(job.getStartTime(), localtime) + VERBOSE_DELIMITER
-                            + maskDate(job.getNextMaterializedTime(), localtime) + VERBOSE_DELIMITER + job.getStatus()
-                            + VERBOSE_DELIMITER + maskDate(job.getLastActionTime(), localtime) + VERBOSE_DELIMITER
-                            + maskDate(job.getEndTime(), localtime));
+                            + VERBOSE_DELIMITER + maskDate(job.getStartTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + maskDate(job.getNextMaterializedTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + job.getStatus() + VERBOSE_DELIMITER
+                            + maskDate(job.getLastActionTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + maskDate(job.getEndTime(), timeZoneId, verbose));
 
                     System.out.println(RULER);
                 }
@@ -1132,7 +1252,7 @@ public class OozieCLI {
                 for (CoordinatorJob job : jobs) {
                     System.out.println(String.format(COORD_JOBS_FORMATTER, maskIfNull(job.getId()), maskIfNull(job
                             .getAppName()), job.getStatus(), job.getFrequency(), job.getTimeUnit(), maskDate(job
-                            .getStartTime(), localtime), maskDate(job.getNextMaterializedTime(), localtime)));
+                            .getStartTime(), timeZoneId, verbose), maskDate(job.getNextMaterializedTime(), timeZoneId, verbose)));
 
                     System.out.println(RULER);
                 }
@@ -1143,7 +1263,25 @@ public class OozieCLI {
         }
     }
 
-    private void printBundleJobs(List<BundleJob> jobs, boolean localtime, boolean verbose) throws IOException {
+    private void printBulkJobs(List<BulkResponse> jobs, String timeZoneId) throws IOException {
+        if (jobs != null && jobs.size() > 0) {
+            System.out.println(String.format(BULK_RESPONSE_FORMATTER, "Bundle Name", "Coordinator Name",
+                    "Coord Action ID", "External ID", "Status", "Created Time", "Error Message"));
+
+            for (BulkResponse response : jobs) {
+                System.out.println(String.format(BULK_RESPONSE_FORMATTER, maskIfNull((response.getBundle()).getAppName()),
+                        maskIfNull((response.getCoordinator()).getAppName()), maskIfNull((response.getAction()).getId()),
+                        maskIfNull((response.getAction()).getExternalId()), (response.getAction()).getStatus(),
+                        maskDate((response.getAction()).getCreatedTime(), timeZoneId, false), (response.getAction()).getErrorMessage()));
+                System.out.println(RULER);
+            }
+        }
+        else {
+            System.out.println("Bulk request criteria did not match any coordinator actions");
+        }
+    }
+
+    private void printBundleJobs(List<BundleJob> jobs, String timeZoneId, boolean verbose) throws IOException {
         if (jobs != null && jobs.size() > 0) {
             if (verbose) {
                 System.out.println("Job ID" + VERBOSE_DELIMITER + "Bundle Name" + VERBOSE_DELIMITER + "Bundle Path"
@@ -1157,9 +1295,9 @@ public class OozieCLI {
                             + VERBOSE_DELIMITER + maskIfNull(job.getAppPath()) + VERBOSE_DELIMITER
                             + maskIfNull(job.getUser()) + VERBOSE_DELIMITER + maskIfNull(job.getGroup())
                             + VERBOSE_DELIMITER + job.getStatus() + VERBOSE_DELIMITER
-                            + maskDate(job.getKickoffTime(), localtime) + VERBOSE_DELIMITER
-                            + maskDate(job.getPauseTime(), localtime) + VERBOSE_DELIMITER
-                            + maskDate(job.getCreatedTime(), localtime) + VERBOSE_DELIMITER
+                            + maskDate(job.getKickoffTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + maskDate(job.getPauseTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + maskDate(job.getCreatedTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
                             + maskIfNull(job.getConsoleUrl()));
 
                     System.out.println(RULER);
@@ -1171,9 +1309,11 @@ public class OozieCLI {
                 System.out.println(RULER);
 
                 for (BundleJob job : jobs) {
-                    System.out.println(String.format(BUNDLE_JOBS_FORMATTER, maskIfNull(job.getId()), maskIfNull(job
-                            .getAppName()), job.getStatus(), maskDate(job.getKickoffTime(), localtime), maskDate(job
-                            .getCreatedTime(), localtime), maskIfNull(job.getUser()), maskIfNull(job.getGroup())));
+                    System.out.println(String.format(BUNDLE_JOBS_FORMATTER, maskIfNull(job.getId()),
+                            maskIfNull(job.getAppName()), job.getStatus(),
+                            maskDate(job.getKickoffTime(), timeZoneId, verbose),
+                            maskDate(job.getCreatedTime(), timeZoneId, verbose), maskIfNull(job.getUser()),
+                            maskIfNull(job.getGroup())));
                     System.out.println(RULER);
                 }
             }
@@ -1185,12 +1325,19 @@ public class OozieCLI {
 
     private void slaCommand(CommandLine commandLine) throws IOException, OozieCLIException {
         XOozieClient wc = createXOozieClient(commandLine);
+        List<String> options = new ArrayList<String>();
+        for (Option option : commandLine.getOptions()) {
+            options.add(option.getOpt());
+        }
+
         String s = commandLine.getOptionValue(OFFSET_OPTION);
         int start = Integer.parseInt((s != null) ? s : "0");
         s = commandLine.getOptionValue(LEN_OPTION);
         int len = Integer.parseInt((s != null) ? s : "100");
+        String filter = commandLine.getOptionValue(FILTER_OPTION);
+
         try {
-            wc.getSlaInfo(start, len);
+            wc.getSlaInfo(start, len, filter);
         }
         catch (OozieClientException ex) {
             throw new OozieCLIException(ex.toString(), ex);
@@ -1250,7 +1397,7 @@ public class OozieCLI {
                 + BuildInfo.getBuildInfo().getProperty(BuildInfo.BUILD_VERSION));
     }
 
-    private void printJobs(List<WorkflowJob> jobs, boolean localtime, boolean verbose) throws IOException {
+    private void printJobs(List<WorkflowJob> jobs, String timeZoneId, boolean verbose) throws IOException {
         if (jobs != null && jobs.size() > 0) {
             if (verbose) {
                 System.out.println("Job ID" + VERBOSE_DELIMITER + "App Name" + VERBOSE_DELIMITER + "App Path"
@@ -1265,10 +1412,11 @@ public class OozieCLI {
                             + VERBOSE_DELIMITER + maskIfNull(job.getAppPath()) + VERBOSE_DELIMITER
                             + maskIfNull(job.getConsoleUrl()) + VERBOSE_DELIMITER + maskIfNull(job.getUser())
                             + VERBOSE_DELIMITER + maskIfNull(job.getGroup()) + VERBOSE_DELIMITER + job.getRun()
-                            + VERBOSE_DELIMITER + maskDate(job.getCreatedTime(), localtime) + VERBOSE_DELIMITER
-                            + maskDate(job.getStartTime(), localtime) + VERBOSE_DELIMITER + job.getStatus()
-                            + VERBOSE_DELIMITER + maskDate(job.getLastModifiedTime(), localtime) + VERBOSE_DELIMITER
-                            + maskDate(job.getEndTime(), localtime));
+                            + VERBOSE_DELIMITER + maskDate(job.getCreatedTime(), timeZoneId, verbose)
+                            + VERBOSE_DELIMITER + maskDate(job.getStartTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + job.getStatus() + VERBOSE_DELIMITER
+                            + maskDate(job.getLastModifiedTime(), timeZoneId, verbose) + VERBOSE_DELIMITER
+                            + maskDate(job.getEndTime(), timeZoneId, verbose));
 
                     System.out.println(RULER);
                 }
@@ -1279,9 +1427,10 @@ public class OozieCLI {
                 System.out.println(RULER);
 
                 for (WorkflowJob job : jobs) {
-                    System.out.println(String.format(WORKFLOW_JOBS_FORMATTER, maskIfNull(job.getId()), maskIfNull(job
-                            .getAppName()), job.getStatus(), maskIfNull(job.getUser()), maskIfNull(job.getGroup()),
-                            maskDate(job.getStartTime(), localtime), maskDate(job.getEndTime(), localtime)));
+                    System.out.println(String.format(WORKFLOW_JOBS_FORMATTER, maskIfNull(job.getId()),
+                            maskIfNull(job.getAppName()), job.getStatus(), maskIfNull(job.getUser()),
+                            maskIfNull(job.getGroup()), maskDate(job.getStartTime(), timeZoneId, verbose),
+                            maskDate(job.getEndTime(), timeZoneId, verbose)));
 
                     System.out.println(RULER);
                 }
@@ -1299,18 +1448,30 @@ public class OozieCLI {
         return "-";
     }
 
-    private String maskDate(Date date, boolean isLocalTimeZone) {
+    private String maskDate(Date date, String timeZoneId, boolean verbose) {
         if (date == null) {
             return "-";
         }
 
-        // SimpleDateFormat dateFormater = new SimpleDateFormat("yyyy-MM-dd
-        // HH:mm Z", Locale.US);
-        SimpleDateFormat dateFormater = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US);
-        if (!isLocalTimeZone) {
-            dateFormater.setTimeZone(TimeZone.getTimeZone("GMT"));
+        SimpleDateFormat dateFormater = null;
+        if (verbose) {
+            dateFormater = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss zzz", Locale.US);
         }
-        return dateFormater.format(date);
+        else {
+            dateFormater = new SimpleDateFormat("yyyy-MM-dd HH:mm zzz", Locale.US);
+        }
+
+        if (timeZoneId != null) {
+            dateFormater.setTimeZone(TimeZone.getTimeZone(timeZoneId));
+        }
+        String dateString = dateFormater.format(date);
+        // Most TimeZones are 3 or 4 characters; GMT offsets (e.g. GMT-07:00) are 9, so lets remove the "GMT" part to make it 6
+        // to fit better
+        Matcher m = GMT_OFFSET_SHORTEN_PATTERN.matcher(dateString);
+        if (m.matches() && m.groupCount() == 2) {
+            dateString = m.group(1) + m.group(2);
+        }
+        return dateString;
     }
 
     private void validateCommand(CommandLine commandLine) throws OozieCLIException {
@@ -1327,9 +1488,15 @@ public class OozieCLI {
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "shell-action-0.1.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "shell-action-0.2.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "shell-action-0.3.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "email-action-0.1.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "distcp-action-0.1.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "distcp-action-0.2.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-workflow-0.2.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
@@ -1337,19 +1504,33 @@ public class OozieCLI {
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-workflow-0.3.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "oozie-workflow-0.4.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-coordinator-0.1.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-coordinator-0.2.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-coordinator-0.3.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "oozie-coordinator-0.4.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-bundle-0.1.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "oozie-bundle-0.2.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "oozie-sla-0.1.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "hive-action-0.2.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "hive-action-0.3.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "hive-action-0.4.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "sqoop-action-0.2.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "sqoop-action-0.3.xsd")));
+                sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
+                        "sqoop-action-0.4.xsd")));
                 sources.add(new StreamSource(Thread.currentThread().getContextClassLoader().getResourceAsStream(
                         "ssh-action-0.1.xsd")));
                 SchemaFactory factory = SchemaFactory.newInstance(XMLConstants.W3C_XML_SCHEMA_NS_URI);
@@ -1396,6 +1577,61 @@ public class OozieCLI {
             Properties conf = getConfiguration(wc, commandLine);
             String script = commandLine.getOptionValue(PIGFILE_OPTION);
             System.out.println(JOB_ID_PREFIX + wc.submitPig(conf, script, pigArgs.toArray(new String[pigArgs.size()])));
+        }
+        catch (OozieClientException ex) {
+            throw new OozieCLIException(ex.toString(), ex);
+        }
+    }
+
+    private void infoCommand(CommandLine commandLine) throws OozieCLIException {
+        for (Option option : commandLine.getOptions()) {
+            String opt = option.getOpt();
+            if (opt.equals(INFO_TIME_ZONES_OPTION)) {
+                printAvailableTimeZones();
+            }
+        }
+    }
+
+    private void printAvailableTimeZones() {
+        System.out.println("The format is \"SHORT_NAME (ID)\"\nGive the ID to the -timezone argument");
+        System.out.println("GMT offsets can also be used (e.g. GMT-07:00, GMT-0700, GMT+05:30, GMT+0530)");
+        System.out.println("Available Time Zones:");
+        for (String tzId : TimeZone.getAvailableIDs()) {
+            // skip id's that are like "Etc/GMT+01:00" because their display names are like "GMT-01:00", which is confusing
+            if (!tzId.startsWith("Etc/GMT")) {
+                TimeZone tZone = TimeZone.getTimeZone(tzId);
+                System.out.println("      " + tZone.getDisplayName(false, TimeZone.SHORT) + " (" + tzId + ")");
+            }
+        }
+    }
+
+
+    private void mrCommand(CommandLine commandLine) throws IOException, OozieCLIException {
+        try {
+            XOozieClient wc = createXOozieClient(commandLine);
+            Properties conf = getConfiguration(wc, commandLine);
+
+            String mapper = conf.getProperty(MAPRED_MAPPER);
+            if (mapper == null) {
+                throw new OozieCLIException("mapper is not specified in conf");
+            }
+
+            String reducer = conf.getProperty(MAPRED_REDUCER);
+            if (reducer == null) {
+                throw new OozieCLIException("reducer is not specified in conf");
+            }
+
+            String inputDir = conf.getProperty(MAPRED_INPUT);
+            if (inputDir == null) {
+                throw new OozieCLIException("mapred.input.dir is not specified in conf");
+            }
+
+            String outputDir = conf.getProperty(MAPRED_OUTPUT);
+            if (outputDir == null) {
+                throw new OozieCLIException("mapred.output.dir is not specified in conf");
+            }
+
+            System.out.println(JOB_ID_PREFIX + wc.submitMapReduce(conf));
         }
         catch (OozieClientException ex) {
             throw new OozieCLIException(ex.toString(), ex);

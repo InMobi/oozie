@@ -53,7 +53,7 @@ public class SLADbOperations {
             // change to
             // CommandException
         }
-        Date nominalTime = DateUtils.parseDateUTC(strNominalTime);
+        Date nominalTime = DateUtils.parseDateOozieTZ(strNominalTime);
         // Setting expected start time
         String strRelExpectedStart = getTagElement(eSla, "should-start");
         if (strRelExpectedStart == null || strRelExpectedStart.length() == 0) {
@@ -126,7 +126,7 @@ public class SLADbOperations {
             // change to
             // CommandException
         }
-        Date nominalTime = DateUtils.parseDateUTC(strNominalTime);
+        Date nominalTime = DateUtils.parseDateOozieTZ(strNominalTime);
         // Setting expected start time
         String strRelExpectedStart = getTagElement(eSla, "should-start");
         if (strRelExpectedStart == null || strRelExpectedStart.length() == 0) {
@@ -220,7 +220,7 @@ public class SLADbOperations {
             return createSlaStatusEvent(id, stat, store, appType);
         }
         catch (Exception e) {
-            throw new CommandException(ErrorCode.E1007, " id " + id, e);
+            throw new CommandException(ErrorCode.E1007, " id " + id, e.getMessage(), e);
         }
     }
 
@@ -233,7 +233,7 @@ public class SLADbOperations {
             return createSlaStatusEvent(id, stat, appType, log);
         }
         catch (Exception e) {
-            throw new CommandException(ErrorCode.E1007, " id " + id, e);
+            throw new CommandException(ErrorCode.E1007, " id " + id, e.getMessage(), e);
         }
     }
 

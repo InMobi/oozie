@@ -19,15 +19,17 @@ package org.apache.oozie.workflow.lite;
 
 import java.util.Collections;
 
-//TODO javadoc
-public class EndNodeDef extends NodeDef {
+/**
+ * Node definition for END control node.
+ */
+public class EndNodeDef extends ControlNodeDef {
 
     EndNodeDef() {
     }
 
     @SuppressWarnings("unchecked")
-    public EndNodeDef(String name) {
-        super(name, null, EndNodeHandler.class, Collections.EMPTY_LIST);
+    public EndNodeDef(String name, Class<? extends ControlNodeHandler> klass) {
+        super(name, "", klass, Collections.EMPTY_LIST);
     }
 
     public static class EndNodeHandler extends NodeHandler {

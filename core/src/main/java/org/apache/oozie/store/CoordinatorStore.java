@@ -437,7 +437,7 @@ public class CoordinatorStore extends Store {
             throw ex;
         }
         catch (SQLException ex) {
-            throw new StoreException(ErrorCode.E0603, name, ex.getMessage(), ex);
+            throw new StoreException(ErrorCode.E0611, name, ex.getMessage(), ex);
         }
         catch (Exception e) {
             throw new StoreException(ErrorCode.E0607, name, e.getMessage(), e);
@@ -918,7 +918,7 @@ public class CoordinatorStore extends Store {
                     action = actions.get(0);
                 }
                 else {
-                    throw new StoreException(ErrorCode.E0605, DateUtils.convertDateToString(nominalTime));
+                    throw new StoreException(ErrorCode.E0605, DateUtils.formatDateOozieTZ(nominalTime));
                 }
                 return getBeanForRunningCoordAction(action);
             }

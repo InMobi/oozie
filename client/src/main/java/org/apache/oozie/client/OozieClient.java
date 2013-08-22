@@ -29,7 +29,6 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -126,6 +125,10 @@ public class OozieClient {
     public static final String FILTER_ID = "id";
 
     public static final String FILTER_UNIT = "unit";
+
+    public static final String FILTER_JOBID = "jobid";
+
+    public static final String FILTER_APPNAME = "appname";
 
     public static final String CHANGE_VALUE_ENDTIME = "endtime";
 
@@ -464,16 +467,8 @@ public class OozieClient {
             Element conf = doc.createElement("configuration");
             doc.appendChild(conf);
             conf.appendChild(doc.createTextNode("\n"));
-            for (Enumeration e = props.keys(); e.hasMoreElements();) {
-                String name = (String) e.nextElement();
-                Object object = props.get(name);
-                String value;
-                if (object instanceof String) {
-                    value = (String) object;
-                }
-                else {
-                    continue;
-                }
+            for (String name : props.stringPropertyNames()) { // Properties whose key or value is not of type String are omitted.
+                String value = props.getProperty(name);
                 Element propNode = doc.createElement("property");
                 conf.appendChild(propNode);
 
@@ -1071,6 +1066,32 @@ public class OozieClient {
         }
     }
 
+    private class BulkResponseStatus extends ClientCallable<List<BulkResponse>> {
+
+        BulkResponseStatus(String filter, int start, int len) {
+            super("GET", RestConstants.JOBS, "", prepareParams(RestConstants.JOBS_BULK_PARAM, filter,
+                    RestConstants.OFFSET_PARAM, Integer.toString(start), RestConstants.LEN_PARAM, Integer.toString(len)));
+        }
+
+        @Override
+        protected List<BulkResponse> call(HttpURLConnection conn) throws IOException, OozieClientException {
+            conn.setRequestProperty("content-type", RestConstants.XML_CONTENT_TYPE);
+            if ((conn.getResponseCode() == HttpURLConnection.HTTP_OK)) {
+                Reader reader = new InputStreamReader(conn.getInputStream());
+                JSONObject json = (JSONObject) JSONValue.parse(reader);
+                JSONArray results = (JSONArray) json.get(JsonTags.BULK_RESPONSES);
+                if (results == null) {
+                    results = new JSONArray();
+                }
+                return JsonToBean.createBulkResponseList(results);
+            }
+            else {
+                handleError(conn);
+            }
+            return null;
+        }
+    }
+
     private class CoordRerun extends ClientCallable<List<CoordinatorAction>> {
 
         CoordRerun(String jobId, String rerunType, String scope, boolean refresh, boolean noCleanup) {
@@ -1183,15 +1204,16 @@ public class OozieClient {
      * @param len number of results
      * @throws OozieClientException
      */
-    public void getSlaInfo(int start, int len) throws OozieClientException {
-        new SlaInfo(start, len).call();
+    public void getSlaInfo(int start, int len, String filter) throws OozieClientException {
+        new SlaInfo(start, len, filter).call();
     }
 
     private class SlaInfo extends ClientCallable<Void> {
 
-        SlaInfo(int start, int len) {
+        SlaInfo(int start, int len, String filter) {
             super("GET", RestConstants.SLA, "", prepareParams(RestConstants.SLA_GT_SEQUENCE_ID,
-                    Integer.toString(start), RestConstants.MAX_EVENTS, Integer.toString(len)));
+                    Integer.toString(start), RestConstants.MAX_EVENTS, Integer.toString(len),
+                    RestConstants.JOBS_FILTER_PARAM, filter));
         }
 
         @Override
@@ -1371,6 +1393,10 @@ public class OozieClient {
      */
     public List<BundleJob> getBundleJobsInfo(String filter, int start, int len) throws OozieClientException {
         return new BundleJobsStatus(filter, start, len).call();
+    }
+
+    public List<BulkResponse> getBulkInfo(String filter, int start, int len) throws OozieClientException {
+        return new BulkResponseStatus(filter, start, len).call();
     }
 
     private class GetQueueDump extends ClientCallable<List<String>> {

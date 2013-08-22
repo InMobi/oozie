@@ -6,9 +6,9 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -26,12 +26,12 @@ import org.apache.oozie.WorkflowJobBean;
 import org.apache.oozie.client.OozieClient;
 import org.apache.oozie.client.WorkflowAction;
 import org.apache.oozie.client.WorkflowJob;
-import org.apache.oozie.command.CommandException;
 import org.apache.oozie.executor.jpa.JPAExecutorException;
 import org.apache.oozie.executor.jpa.WorkflowActionGetJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowJobGetJPAExecutor;
 import org.apache.oozie.executor.jpa.WorkflowJobInsertJPAExecutor;
 import org.apache.oozie.service.JPAService;
+import org.apache.oozie.service.LiteWorkflowStoreService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.service.UUIDService;
 import org.apache.oozie.service.WorkflowAppService;
@@ -50,11 +50,15 @@ import org.apache.oozie.workflow.lite.StartNodeDef;
 
 public class TestPurgeXCommand extends XDataTestCase {
     private Services services;
+    private String[] excludedServices = { "org.apache.oozie.service.StatusTransitService",
+            "org.apache.oozie.service.PauseTransitService", "org.apache.oozie.service.PurgeService",
+            "org.apache.oozie.service.CoordMaterializeTriggerService", "org.apache.oozie.service.RecoveryService" };
 
     @Override
     protected void setUp() throws Exception {
         super.setUp();
         services = new Services();
+        setClassesToBeExcluded(services.getConf(), excludedServices);
         services.init();
         cleanUpDBTables();
     }
@@ -235,8 +239,10 @@ public class TestPurgeXCommand extends XDataTestCase {
 
     protected WorkflowJobBean addRecordToWfJobTableForNegCase(WorkflowJob.Status jobStatus,
             WorkflowInstance.Status instanceStatus) throws Exception {
-        WorkflowApp app = new LiteWorkflowApp("testApp", "<workflow-app/>", new StartNodeDef("end"))
-                .addNode(new EndNodeDef("end"));
+        WorkflowApp app =
+            new LiteWorkflowApp("testApp", "<workflow-app/>",
+                new StartNodeDef(LiteWorkflowStoreService.LiteControlNodeHandler.class, "end")).
+                    addNode(new EndNodeDef("end", LiteWorkflowStoreService.LiteControlNodeHandler.class));
         Configuration conf = new Configuration();
         Path appUri = new Path(getAppPath(), "workflow.xml");
         conf.set(OozieClient.APP_PATH, appUri.toString());
@@ -244,8 +250,8 @@ public class TestPurgeXCommand extends XDataTestCase {
         conf.set(OozieClient.USER_NAME, getTestUser());
 
         WorkflowJobBean wfBean = createWorkflow(app, conf, "auth", jobStatus, instanceStatus);
-        wfBean.setStartTime(DateUtils.parseDateUTC("2015-12-18T01:00Z"));
-        wfBean.setEndTime(DateUtils.parseDateUTC("2015-12-18T03:00Z"));
+        wfBean.setStartTime(DateUtils.parseDateOozieTZ("2015-12-18T01:00Z"));
+        wfBean.setEndTime(DateUtils.parseDateOozieTZ("2015-12-18T03:00Z"));
 
         try {
             JPAService jpaService = Services.get().get(JPAService.class);
@@ -283,8 +289,8 @@ public class TestPurgeXCommand extends XDataTestCase {
         workflow.setGroup(conf.get(OozieClient.GROUP_NAME));
         workflow.setAuthToken(authToken);
         workflow.setWorkflowInstance(wfInstance);
-        workflow.setStartTime(DateUtils.parseDateUTC("2009-12-18T01:00Z"));
-        workflow.setEndTime(DateUtils.parseDateUTC("2009-12-18T03:00Z"));
+        workflow.setStartTime(DateUtils.parseDateOozieTZ("2009-12-18T01:00Z"));
+        workflow.setEndTime(DateUtils.parseDateOozieTZ("2009-12-18T03:00Z"));
         return workflow;
     }
 

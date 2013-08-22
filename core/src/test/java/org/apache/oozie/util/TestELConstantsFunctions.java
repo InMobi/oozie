@@ -43,9 +43,32 @@ public class TestELConstantsFunctions extends XTestCase {
         assertEquals("", ELConstantsFunctions.concat(null, null));
     }
 
+    public void testReplaceAll() {
+        assertEquals("aefefd", ELConstantsFunctions.replaceAll("abcbcd", "bc", "ef"));
+        assertEquals("d1 d2 d3", ELConstantsFunctions.replaceAll("d1,d2,d3", ",", " "));
+        assertEquals("ayyycd", ELConstantsFunctions.replaceAll("abcbcd", "bcb", "yyy"));
+        assertEquals("acd", ELConstantsFunctions.replaceAll("abcbcd", "bcb", ""));
+        assertEquals(null, ELConstantsFunctions.replaceAll(null, "bcb", "yyy"));
+        assertEquals("abcbcd", ELConstantsFunctions.replaceAll("abcbcd", null, "XYZ"));
+        assertEquals("acd", ELConstantsFunctions.replaceAll("abcbcd", "bcb", null));
+    }
+
+    public void testAppendAll() {
+        assertEquals("/a/b/ADD,/c/b/ADD,/c/d/ADD", ELConstantsFunctions.appendAll("/a/b/,/c/b/,/c/d/", "ADD", ","));
+        assertEquals("/a/b/ADD", ELConstantsFunctions.appendAll("/a/b/", "ADD", ","));
+        assertEquals(" /a/b/  ADD,/c/b/ ADD, /c/d/ ADD", ELConstantsFunctions.appendAll(" /a/b/  ,/c/b/ , /c/d/ ",
+                "ADD", ","));
+        assertEquals("/a/b/ADD", ELConstantsFunctions.appendAll("/a/b/", "ADD", ","));
+        assertEquals(null, ELConstantsFunctions.appendAll(null, "ADD", ","));
+        assertEquals("/a/b/,/c/b/,/c/d/", ELConstantsFunctions.appendAll("/a/b/,/c/b/,/c/d/", null, ","));
+        assertEquals("/a/b/,/c/b/,/c/d/", ELConstantsFunctions.appendAll("/a/b/,/c/b/,/c/d/", "ADD", null));
+        assertEquals("ADDaADDbADD", ELConstantsFunctions.appendAll("ab", "ADD", ""));
+        assertEquals("/a/b/ADD,/c/b/ADD,/c/d/ADD", ELConstantsFunctions.appendAll("/a/b/,/c/b/,/c/d/", "ADD", ","));
+    }
+
     public void testTimestamp() throws Exception {
         String s = ELConstantsFunctions.timestamp();
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
         sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
         assertNotNull(sdf.parse(s));
     }

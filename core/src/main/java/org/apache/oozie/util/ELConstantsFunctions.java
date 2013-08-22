@@ -95,7 +95,62 @@ public class ELConstantsFunctions {
     }
 
     /**
-     * Return the trimmed version of the given string.
+     * Replace each occurrence of regular expression match in the first string
+     * with the <code>replacement</code> string. This EL function utilizes the
+     * java String class replaceAll method. For more details please see
+     *
+     * <code>http://docs.oracle.com/javase/6/docs/api/java/lang/String.html#replaceAll(java.lang.String,%20java.lang.String)</code>
+     *
+     * @param src source string.
+     * @param regex the regular expression to which this string is to be
+     *        matched. null means no replacement.
+     * @param replacement - the string to be substituted for each match. If
+     *        null, it will considered as ""
+     * @return the replaced string.
+     */
+    public static String replaceAll(String src, String regex, String replacement) {
+        if (src != null && regex != null) {
+            if (replacement == null) {
+                replacement = "";
+            }
+            return src.replaceAll(regex, replacement);
+        }
+        return src;
+    }
+
+    /**
+     * Add the <code>append</code> string into each splitted sub-strings of the
+     * first string ('src'). The split is performed into <code>src</code> string
+     * using the <code>delimiter</code>. E.g.
+     * <code>appendAll("/a/b/,/c/b/,/c/d/", "ADD", ",")</code> will return
+     * <code>"/a/b/ADD,/c/b/ADD,/c/d/ADD"</code>
+     *
+     * @param src source string.
+     * @param append - the string to be appended for each match. If null, it
+     *        will considered as ""
+     * @param delimeter the string that is used to split the 'src' into
+     *        substring before the append. null means no append.
+     * @return the appended string.
+     */
+    public static String appendAll(String src, String append, String delimeter) {
+        if (src != null && delimeter != null) {
+            if (append == null) {
+                append = "";
+            }
+            String[] ret = src.split(delimeter);
+            StringBuilder result = new StringBuilder();
+            for (int i = 0; i < ret.length; i++) {
+                result.append(ret[i]).append(append);
+                if (i < (ret.length - 1)) { // Don't append to the last item
+                    result.append(delimeter);
+                }
+            }
+            return result.toString();
+        }
+        return src;
+    }
+
+    /**
      *
      * @param input string to be trimmed
      * @return the trimmed version of the given string or the empty string if the given string was <code>null</code>
@@ -105,15 +160,13 @@ public class ELConstantsFunctions {
     }
 
     /**
-     * Return the UTC current date and time in W3C format down to second (yyyy-MM-ddTHH:mm:ssZ). i.e.:
-     * 1997-07-16T19:20:30Z
+     * Return the current datetime in ISO8601 using Oozie processing timezone, yyyy-MM-ddTHH:mmZ. i.e.:
+     * 1997-07-16T19:20Z
      *
      * @return the formatted time string.
      */
     public static String timestamp() {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-        return sdf.format(new Date());
+        return DateUtils.formatDateOozieTZ(new Date());
     }
 
     /**

@@ -24,6 +24,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.oozie.BaseEngineException;
+import org.apache.oozie.BulkResponseInfo;
 import org.apache.oozie.BundleJobBean;
 import org.apache.oozie.BundleJobInfo;
 import org.apache.oozie.CoordinatorEngine;
@@ -38,6 +40,7 @@ import org.apache.oozie.ErrorCode;
 import org.apache.oozie.WorkflowJobBean;
 import org.apache.oozie.WorkflowsInfo;
 import org.apache.oozie.client.OozieClient;
+import org.apache.oozie.client.rest.BulkResponseImpl;
 import org.apache.oozie.client.rest.JsonTags;
 import org.apache.oozie.client.rest.RestConstants;
 import org.apache.oozie.service.CoordinatorEngineService;
@@ -127,17 +130,22 @@ public class V1JobsServlet extends BaseJobsServlet {
     @Override
     protected JSONObject getJobs(HttpServletRequest request) throws XServletException, IOException {
         JSONObject json = null;
-        String jobtype = request.getParameter(RestConstants.JOBTYPE_PARAM);
-        jobtype = (jobtype != null) ? jobtype : "wf";
+        String isBulk = request.getParameter(RestConstants.JOBS_BULK_PARAM);
+        if(isBulk != null) {
+            json = getBulkJobs(request);
+        } else {
+            String jobtype = request.getParameter(RestConstants.JOBTYPE_PARAM);
+            jobtype = (jobtype != null) ? jobtype : "wf";
 
-        if (jobtype.contains("wf")) {
-            json = getWorkflowJobs(request);
-        }
-        else if (jobtype.contains("coord")) {
-            json = getCoordinatorJobs(request);
-        }
-        else if (jobtype.contains("bundle")) {
-            json = getBundleJobs(request);
+            if (jobtype.contains("wf")) {
+                json = getWorkflowJobs(request);
+            }
+            else if (jobtype.contains("coord")) {
+                json = getCoordinatorJobs(request);
+            }
+            else if (jobtype.contains("bundle")) {
+                json = getBundleJobs(request);
+            }
         }
         return json;
     }
@@ -152,17 +160,28 @@ public class V1JobsServlet extends BaseJobsServlet {
 
         try {
             String action = request.getParameter(RestConstants.ACTION_PARAM);
-            if (action != null && !action.equals(RestConstants.JOB_ACTION_START)) {
+            if (action != null && !action.equals(RestConstants.JOB_ACTION_START)
+                    && !action.equals(RestConstants.JOB_ACTION_DRYRUN)) {
                 throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ErrorCode.E0303,
                         RestConstants.ACTION_PARAM, action);
             }
             boolean startJob = (action != null);
             String user = conf.get(OozieClient.USER_NAME);
             DagEngine dagEngine = Services.get().get(DagEngineService.class).getDagEngine(user, getAuthToken(request));
-            String id = dagEngine.submitJob(conf, startJob);
+            String id;
+            boolean dryrun = false;
+            if (action != null) {
+                dryrun = (action.equals(RestConstants.JOB_ACTION_DRYRUN));
+            }
+            if (dryrun) {
+                id = dagEngine.dryRunSubmit(conf);
+            }
+            else {
+                id = dagEngine.submitJob(conf, startJob);
+            }
             json.put(JsonTags.JOB_ID, id);
         }
-        catch (DagEngineException ex) {
+        catch (BaseEngineException ex) {
             throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ex);
         }
 
@@ -194,7 +213,7 @@ public class V1JobsServlet extends BaseJobsServlet {
                 dryrun = (action.equals(RestConstants.JOB_ACTION_DRYRUN));
             }
             if (dryrun) {
-                id = coordEngine.dryrunSubmit(conf, startJob);
+                id = coordEngine.dryRunSubmit(conf);
             }
             else {
                 id = coordEngine.submitJob(conf, startJob);
@@ -232,7 +251,7 @@ public class V1JobsServlet extends BaseJobsServlet {
                 dryrun = (action.equals(RestConstants.JOB_ACTION_DRYRUN));
             }
             if (dryrun) {
-                id = bundleEngine.dryrunSubmit(conf, startJob);
+                id = bundleEngine.dryRunSubmit(conf);
             }
             else {
                 id = bundleEngine.submitJob(conf, startJob);
@@ -284,6 +303,8 @@ public class V1JobsServlet extends BaseJobsServlet {
             String filter = request.getParameter(RestConstants.JOBS_FILTER_PARAM);
             String startStr = request.getParameter(RestConstants.OFFSET_PARAM);
             String lenStr = request.getParameter(RestConstants.LEN_PARAM);
+            String timeZoneId = request.getParameter(RestConstants.TIME_ZONE_PARAM) == null 
+                    ? "GMT" : request.getParameter(RestConstants.TIME_ZONE_PARAM);
             int start = (startStr != null) ? Integer.parseInt(startStr) : 1;
             start = (start < 1) ? 1 : start;
             int len = (lenStr != null) ? Integer.parseInt(lenStr) : 50;
@@ -292,7 +313,7 @@ public class V1JobsServlet extends BaseJobsServlet {
                     getAuthToken(request));
             WorkflowsInfo jobs = dagEngine.getJobs(filter, start, len);
             List<WorkflowJobBean> jsonWorkflows = jobs.getWorkflows();
-            json.put(JsonTags.WORKFLOWS_JOBS, WorkflowJobBean.toJSONArray(jsonWorkflows));
+            json.put(JsonTags.WORKFLOWS_JOBS, WorkflowJobBean.toJSONArray(jsonWorkflows, timeZoneId));
             json.put(JsonTags.WORKFLOWS_TOTAL, jobs.getTotal());
             json.put(JsonTags.WORKFLOWS_OFFSET, jobs.getStart());
             json.put(JsonTags.WORKFLOWS_LEN, jobs.getLen());
@@ -316,6 +337,8 @@ public class V1JobsServlet extends BaseJobsServlet {
             String filter = request.getParameter(RestConstants.JOBS_FILTER_PARAM);
             String startStr = request.getParameter(RestConstants.OFFSET_PARAM);
             String lenStr = request.getParameter(RestConstants.LEN_PARAM);
+            String timeZoneId = request.getParameter(RestConstants.TIME_ZONE_PARAM) == null 
+                    ? "GMT" : request.getParameter(RestConstants.TIME_ZONE_PARAM);
             int start = (startStr != null) ? Integer.parseInt(startStr) : 1;
             start = (start < 1) ? 1 : start;
             int len = (lenStr != null) ? Integer.parseInt(lenStr) : 50;
@@ -324,7 +347,7 @@ public class V1JobsServlet extends BaseJobsServlet {
                     getUser(request), getAuthToken(request));
             CoordinatorJobInfo jobs = coordEngine.getCoordJobs(filter, start, len);
             List<CoordinatorJobBean> jsonJobs = jobs.getCoordJobs();
-            json.put(JsonTags.COORDINATOR_JOBS, CoordinatorJobBean.toJSONArray(jsonJobs));
+            json.put(JsonTags.COORDINATOR_JOBS, CoordinatorJobBean.toJSONArray(jsonJobs, timeZoneId));
             json.put(JsonTags.COORD_JOB_TOTAL, jobs.getTotal());
             json.put(JsonTags.COORD_JOB_OFFSET, jobs.getStart());
             json.put(JsonTags.COORD_JOB_LEN, jobs.getLen());
@@ -343,6 +366,8 @@ public class V1JobsServlet extends BaseJobsServlet {
             String filter = request.getParameter(RestConstants.JOBS_FILTER_PARAM);
             String startStr = request.getParameter(RestConstants.OFFSET_PARAM);
             String lenStr = request.getParameter(RestConstants.LEN_PARAM);
+            String timeZoneId = request.getParameter(RestConstants.TIME_ZONE_PARAM) == null 
+                    ? "GMT" : request.getParameter(RestConstants.TIME_ZONE_PARAM);
             int start = (startStr != null) ? Integer.parseInt(startStr) : 1;
             start = (start < 1) ? 1 : start;
             int len = (lenStr != null) ? Integer.parseInt(lenStr) : 50;
@@ -353,13 +378,44 @@ public class V1JobsServlet extends BaseJobsServlet {
             BundleJobInfo jobs = bundleEngine.getBundleJobs(filter, start, len);
             List<BundleJobBean> jsonJobs = jobs.getBundleJobs();
 
-            json.put(JsonTags.BUNDLE_JOBS, BundleJobBean.toJSONArray(jsonJobs));
+            json.put(JsonTags.BUNDLE_JOBS, BundleJobBean.toJSONArray(jsonJobs, timeZoneId));
             json.put(JsonTags.BUNDLE_JOB_TOTAL, jobs.getTotal());
             json.put(JsonTags.BUNDLE_JOB_OFFSET, jobs.getStart());
             json.put(JsonTags.BUNDLE_JOB_LEN, jobs.getLen());
 
         }
         catch (BundleEngineException ex) {
+            throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ex);
+        }
+        return json;
+    }
+
+    @SuppressWarnings("unchecked")
+    private JSONObject getBulkJobs(HttpServletRequest request) throws XServletException, IOException {
+        JSONObject json = new JSONObject();
+        try {
+            String bulkFilter = request.getParameter(RestConstants.JOBS_BULK_PARAM); //REST API
+            String startStr = request.getParameter(RestConstants.OFFSET_PARAM);
+            String lenStr = request.getParameter(RestConstants.LEN_PARAM);
+            String timeZoneId = request.getParameter(RestConstants.TIME_ZONE_PARAM) == null
+                    ? "GMT" : request.getParameter(RestConstants.TIME_ZONE_PARAM);
+            int start = (startStr != null) ? Integer.parseInt(startStr) : 1;
+            start = (start < 1) ? 1 : start;
+            int len = (lenStr != null) ? Integer.parseInt(lenStr) : 50;
+            len = (len < 1) ? 50 : len;
+
+            BundleEngine bundleEngine = Services.get().get(BundleEngineService.class).getBundleEngine(getUser(request),
+                    getAuthToken(request));
+            BulkResponseInfo bulkResponse = bundleEngine.getBulkJobs(bulkFilter, start, len);
+            List<BulkResponseImpl> jsonResponse = bulkResponse.getResponses();
+
+            json.put(JsonTags.BULK_RESPONSES, BulkResponseImpl.toJSONArray(jsonResponse, timeZoneId));
+            json.put(JsonTags.BULK_RESPONSE_TOTAL, bulkResponse.getTotal());
+            json.put(JsonTags.BULK_RESPONSE_OFFSET, bulkResponse.getStart());
+            json.put(JsonTags.BULK_RESPONSE_LEN, bulkResponse.getLen());
+
+        }
+        catch (BaseEngineException ex) {
             throw new XServletException(HttpServletResponse.SC_BAD_REQUEST, ex);
         }
         return json;

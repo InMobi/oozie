@@ -57,7 +57,7 @@ public class SLADbXOperations {
         if (strNominalTime == null || strNominalTime.length() == 0) {
             throw new CommandException(ErrorCode.E1101);
         }
-        Date nominalTime = DateUtils.parseDateUTC(strNominalTime);
+        Date nominalTime = DateUtils.parseDateOozieTZ(strNominalTime);
         // Setting expected start time
         String strRelExpectedStart = getTagElement(eSla, "should-start");
         if (strRelExpectedStart == null || strRelExpectedStart.length() == 0) {
@@ -146,7 +146,7 @@ public class SLADbXOperations {
             return createSlaStatusEvent(id, stat, appType);
         }
         catch (Exception e) {
-            throw new CommandException(ErrorCode.E1007, " id " + id, e);
+            throw new CommandException(ErrorCode.E1007, " id " + id, e.getMessage(), e);
         }
     }
 
