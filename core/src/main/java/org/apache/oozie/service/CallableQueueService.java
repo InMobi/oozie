@@ -17,6 +17,16 @@
  */
 package org.apache.oozie.service;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.oozie.client.OozieClient.SYSTEM_MODE;
+import org.apache.oozie.util.Instrumentable;
+import org.apache.oozie.util.Instrumentation;
+import org.apache.oozie.util.PollablePriorityDelayQueue;
+import org.apache.oozie.util.PriorityDelayQueue;
+import org.apache.oozie.util.PriorityDelayQueue.QueueElement;
+import org.apache.oozie.util.XCallable;
+import org.apache.oozie.util.XLog;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -25,21 +35,15 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Map.Entry;
-import java.util.concurrent.*;
+import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.apache.hadoop.conf.Configuration;
-import org.apache.oozie.client.OozieClient.SYSTEM_MODE;
-import org.apache.oozie.util.Instrumentable;
-import org.apache.oozie.util.Instrumentation;
-import org.apache.oozie.util.PollablePriorityDelayQueue;
-import org.apache.oozie.util.PriorityDelayQueue;
-import org.apache.oozie.util.XCallable;
-import org.apache.oozie.util.XLog;
-import org.apache.oozie.util.PriorityDelayQueue.QueueElement;
-import org.python.modules.thread.thread;
 
 /**
  * The callable queue service queues {@link XCallable}s for asynchronous execution.
@@ -173,48 +177,49 @@ public class CallableQueueService implements Service, Instrumentable, Callable {
         }
 
         public void run() {
-            if (Services.get().getSystemMode() == SYSTEM_MODE.SAFEMODE) {
-                log.info("Oozie is in SAFEMODE, requeuing callable [{0}] with [{1}]ms delay", getElement().getType(),
-                        SAFE_MODE_DELAY);
-                setDelay(SAFE_MODE_DELAY, TimeUnit.MILLISECONDS);
-                removeFromUniqueCallables();
-                queue(this, true);
-                return;
-            }
-            XCallable<?> callable = getElement();
+            XCallable<?> callable = null;
+            boolean begin = true;
             try {
+                removeFromUniqueCallables();
+
+                if (Services.get().getSystemMode() == SYSTEM_MODE.SAFEMODE) {
+                    log.info("Oozie is in SAFEMODE, requeuing callable [{0}] with [{1}]ms delay", getElement().getType(),
+                            SAFE_MODE_DELAY);
+                    setDelay(SAFE_MODE_DELAY, TimeUnit.MILLISECONDS);
+                    queue(this, true);
+                    return;
+                }
+
+                callable = getElement();
                 if (callableBegin(callable)) {
+                    begin = true;
                     cron.stop();
                     addInQueueCron(cron);
                     XLog.Info.get().clear();
                     XLog log = XLog.getLog(getClass());
                     log.trace("executing callable [{0}]", callable.getName());
 
-                    removeFromUniqueCallables();
-                    try {
-                        callable.call();
-                        incrCounter(INSTR_EXECUTED_COUNTER, 1);
-                        log.trace("executed callable [{0}]", callable.getName());
-                    }
-                    catch (Exception ex) {
-                        incrCounter(INSTR_FAILED_COUNTER, 1);
-                        log.warn("exception callable [{0}], {1}", callable.getName(), ex.getMessage(), ex);
-                    }
-                    finally {
-                        XLog.Info.get().clear();
-                    }
+                    callable.call();
+                    incrCounter(INSTR_EXECUTED_COUNTER, 1);
+                    log.trace("executed callable [{0}]", callable.getName());
                 }
                 else {
                     log.warn("max concurrency for callable [{0}] exceeded, requeueing with [{1}]ms delay", callable
                             .getType(), CONCURRENCY_DELAY);
                     setDelay(CONCURRENCY_DELAY, TimeUnit.MILLISECONDS);
-                    removeFromUniqueCallables();
                     queue(this, true);
                     incrCounter(callable.getType() + "#exceeded.concurrency", 1);
                 }
-            }
-            finally {
-                callableEnd(callable);
+
+            } catch(Throwable t) {
+                String name = callable != null ? callable.getName() : "uninitialised";
+                log.warn("exception callable [{0}], {1}", name, t.getMessage(), t);
+                incrCounter(INSTR_FAILED_COUNTER, 1);
+
+            } finally {
+                if (callable != null && begin) {
+                    callableEnd(callable);
+                }
             }
         }
 
