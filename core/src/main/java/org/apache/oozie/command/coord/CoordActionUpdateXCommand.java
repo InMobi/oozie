@@ -156,7 +156,7 @@ public class CoordActionUpdateXCommand extends CoordinatorXCommand<Void> {
      */
     @Override
     public String getEntityKey() {
-        return workflow.getParentId().substring(0, workflow.getParentId().indexOf("@"));
+        return workflow.getParentId();
     }
 
     /* (non-Javadoc)

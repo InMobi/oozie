@@ -274,7 +274,7 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
 
     @Override
     public String getEntityKey() {
-        return this.jobId;
+        return this.actionId;
     }
 
     @Override

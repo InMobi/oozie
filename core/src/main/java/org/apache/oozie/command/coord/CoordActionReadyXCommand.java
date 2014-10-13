@@ -132,7 +132,7 @@ public class CoordActionReadyXCommand extends CoordinatorXCommand<Void> {
 
     @Override
     public String getEntityKey() {
-        return jobId;
+        return null;
     }
 
     @Override
