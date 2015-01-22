@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.coord;
 
 import org.apache.hadoop.conf.Configuration;
@@ -56,9 +57,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @SuppressWarnings("deprecation")
 public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
@@ -86,6 +85,11 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
         this.user = ParamChecker.notEmpty(user, "user");
         this.appName = ParamChecker.notEmpty(appName, "appName");
         this.jobId = jobId;
+    }
+
+    @Override
+    protected void setLogInfo() {
+        LogUtils.setLogInfo(actionId);
     }
 
     /**
@@ -116,6 +120,7 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
         Configuration runConf = null;
         try {
             runConf = new XConfiguration(new StringReader(createdConf));
+
         }
         catch (IOException e1) {
             log.warn("Configuration parse error in:" + createdConf);
@@ -147,9 +152,25 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
         // new property called 'oozie.wf.application.path'
         // WF Engine requires the path to the workflow.xml to be saved under
         // this property name
-        String appPath = workflowProperties.getChild("action", workflowProperties.getNamespace()).getChild("workflow",
-                                                                                                           workflowProperties.getNamespace()).getChild("app-path", workflowProperties.getNamespace()).getValue();
+        String appPath = workflowProperties.getChild("action", workflowProperties.getNamespace())
+                .getChild("workflow", workflowProperties.getNamespace()).getChild("app-path",
+                        workflowProperties.getNamespace()).getValue();
+
+        // Copying application path in runconf.
         runConf.set("oozie.wf.application.path", appPath);
+
+        // Step 4: Extract the runconf and copy the rerun config to runconf.
+        if (runConf.get(CoordRerunXCommand.RERUN_CONF) != null) {
+            Configuration rerunConf = null;
+            try {
+                rerunConf = new XConfiguration(new StringReader(runConf.get(CoordRerunXCommand.RERUN_CONF)));
+                XConfiguration.copy(rerunConf, runConf);
+            } catch (IOException e) {
+                log.warn("Configuration parse error in:" + rerunConf);
+                throw new CommandException(ErrorCode.E1005, e.getMessage(), e);
+            }
+            runConf.unset(CoordRerunXCommand.RERUN_CONF);
+        }
         return runConf;
     }
 
@@ -182,16 +203,21 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
                 }
                 // Normalize workflow appPath here;
                 JobUtils.normalizeAppPath(conf.get(OozieClient.USER_NAME), conf.get(OozieClient.GROUP_NAME), conf);
-                String wfId = dagEngine.submitJobFromCoordinator(conf, actionId);
+                if (coordAction.getExternalId() != null) {
+                    conf.setBoolean(OozieClient.RERUN_FAIL_NODES, true);
+                    dagEngine.reRun(coordAction.getExternalId(), conf);
+                } else {
+                    String wfId = dagEngine.submitJobFromCoordinator(conf, actionId);
+                    coordAction.setExternalId(wfId);
+                }
                 coordAction.setStatus(CoordinatorAction.Status.RUNNING);
-                coordAction.setExternalId(wfId);
                 coordAction.incrementAndGetPending();
 
                 //store.updateCoordinatorAction(coordAction);
                 JPAService jpaService = Services.get().get(JPAService.class);
                 if (jpaService != null) {
-                    log.debug("Updating WF record for WFID :" + wfId + " with parent id: " + actionId);
-                    WorkflowJobBean wfJob = WorkflowJobQueryExecutor.getInstance().get(WorkflowJobQuery.GET_WORKFLOW_STARTTIME, wfId);
+                    log.debug("Updating WF record for WFID :" + coordAction.getExternalId() + " with parent id: " + actionId);
+                    WorkflowJobBean wfJob = WorkflowJobQueryExecutor.getInstance().get(WorkflowJobQuery.GET_WORKFLOW_STARTTIME, coordAction.getExternalId());
                     wfJob.setParentId(actionId);
                     wfJob.setLastModifiedTime(new Date());
                     BatchQueryExecutor executor = BatchQueryExecutor.getInstance();
@@ -201,6 +227,7 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
                             CoordActionQuery.UPDATE_COORD_ACTION_FOR_START, coordAction));
                     try {
                         executor.executeBatchInsertUpdateDelete(insertList, updateList, null);
+                        queue(new CoordActionNotificationXCommand(coordAction), 100);
                         if (EventHandlerService.isEnabled()) {
                             generateEvent(coordAction, user, appName, wfJob.getStartTime());
                         }
@@ -292,7 +319,7 @@ public class CoordActionStartXCommand extends CoordinatorXCommand<Void> {
         catch (JPAExecutorException je) {
             throw new CommandException(je);
         }
-        LogUtils.setLogInfo(coordAction, logInfo);
+        LogUtils.setLogInfo(coordAction);
     }
 
     @Override

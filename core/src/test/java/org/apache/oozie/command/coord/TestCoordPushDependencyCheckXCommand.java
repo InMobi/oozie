@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.coord;
 
 import java.io.ByteArrayOutputStream;
@@ -45,7 +46,6 @@ import org.apache.oozie.util.XmlUtils;
 import org.jdom.Element;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class TestCoordPushDependencyCheckXCommand extends XDataTestCase {
@@ -238,7 +238,6 @@ public class TestCoordPushDependencyCheckXCommand extends XDataTestCase {
 
     }
 
-    @Ignore
     @Test
     public void testTimeOutWithUnresolvedMissingDependencies() throws Exception {
         String db = "default";
@@ -466,5 +465,4 @@ public class TestCoordPushDependencyCheckXCommand extends XDataTestCase {
             throw new Exception("Action ID " + actionId + " was not stored properly in db");
         }
     }
-
 }

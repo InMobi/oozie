@@ -6,18 +6,21 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.action;
 
 import java.io.EOFException;
+
+import org.apache.oozie.service.ConfigurationService;
 import org.apache.oozie.service.Services;
 import org.apache.oozie.test.XTestCase;
 import org.apache.oozie.client.WorkflowAction;
@@ -30,6 +33,7 @@ public class TestActionExecutor extends XTestCase {
     private static class MyActionExecutor extends ActionExecutor {
 
 		private int maxRetries;
+        private long retryInterval;
 
         protected MyActionExecutor() {
             super("type");
@@ -47,12 +51,15 @@ public class TestActionExecutor extends XTestCase {
             super("type", retryInterval);
             super.setMaxRetries(maxRetries);
             this.maxRetries = maxRetries;
+            super.setRetryInterval(retryInterval);
+            this.retryInterval = retryInterval;
+
         }
 
         public void start(Context context, WorkflowAction action) throws ActionExecutorException {
             assertEquals("type", getType());
             assertEquals(this.maxRetries, getMaxRetries());
-            assertEquals(ActionExecutor.RETRY_INTERVAL, getRetryInterval());
+            assertEquals(ConfigurationService.getLong(ActionExecutor.ACTION_RETRY_INTERVAL), getRetryInterval());
         }
 
         public void end(Context context, WorkflowAction action) throws ActionExecutorException {

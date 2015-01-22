@@ -6,15 +6,16 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.wf;
 
 import java.io.IOException;
@@ -58,8 +59,6 @@ import org.apache.oozie.workflow.lite.LiteWorkflowInstance;
 public abstract class ActionXCommand<T> extends WorkflowXCommand<Void> {
     private static final String INSTRUMENTATION_GROUP = "action.executors";
 
-    protected static final String INSTR_FAILED_JOBS_COUNTER = "failed";
-
     protected static final String RECOVERY_ID_SEPARATOR = "@";
 
     public ActionXCommand(String name, String type, int priority) {
@@ -93,7 +92,7 @@ public abstract class ActionXCommand<T> extends WorkflowXCommand<Void> {
             action.setStatus(status);
             action.setPending();
             action.incRetries();
-            long retryDelayMillis = executor.getRetryInterval() * 1000;
+            long retryDelayMillis = getRetryDelay(actionRetryCount, executor.getRetryInterval(), executor.getRetryPolicy());
             action.setPendingAge(new Date(System.currentTimeMillis() + retryDelayMillis));
             LOG.info("Next Retry, Attempt Number [{0}] in [{1}] milliseconds", actionRetryCount + 1, retryDelayMillis);
             this.resetUsed();
@@ -195,9 +194,9 @@ public abstract class ActionXCommand<T> extends WorkflowXCommand<Void> {
                 workflow.setStatus(WorkflowJob.Status.FAILED);
                 action.setStatus(WorkflowAction.Status.FAILED);
                 action.resetPending();
-                queue(new NotificationXCommand(workflow, action));
+                queue(new WorkflowNotificationXCommand(workflow, action));
                 queue(new KillXCommand(workflow.getId()));
-                InstrumentUtils.incrJobCounter(INSTR_FAILED_JOBS_COUNTER, 1, getInstrumentation());
+                InstrumentUtils.incrJobCounter(INSTR_FAILED_JOBS_COUNTER_NAME, 1, getInstrumentation());
             }
             catch (WorkflowException ex) {
                 throw new CommandException(ex);
@@ -216,7 +215,8 @@ public abstract class ActionXCommand<T> extends WorkflowXCommand<Void> {
         String errorCode = action.getErrorCode();
         Set<String> allowedRetryCode = LiteWorkflowStoreService.getUserRetryErrorCode();
 
-        if (allowedRetryCode.contains(errorCode) && action.getUserRetryCount() < action.getUserRetryMax()) {
+        if ((allowedRetryCode.contains(LiteWorkflowStoreService.USER_ERROR_CODE_ALL) || allowedRetryCode.contains(errorCode))
+                && action.getUserRetryCount() < action.getUserRetryMax()) {
             LOG.info("Preparing retry this action [{0}], errorCode [{1}], userRetryCount [{2}], "
                     + "userRetryMax [{3}], userRetryInterval [{4}]", action.getId(), errorCode, action
                     .getUserRetryCount(), action.getUserRetryMax(), action.getUserRetryInterval());
@@ -251,6 +251,21 @@ public abstract class ActionXCommand<T> extends WorkflowXCommand<Void> {
 	 */
     protected void addActionCron(String type, Instrumentation.Cron cron) {
         getInstrumentation().addCron(INSTRUMENTATION_GROUP, type + "#" + getName(), cron);
+    }
+
+    /*
+     * Returns the next retry time in milliseconds, based on retry policy algorithm.
+     */
+    private long getRetryDelay(int retryCount, long retryInterval, ActionExecutor.RETRYPOLICY retryPolicy) {
+        switch (retryPolicy) {
+            case EXPONENTIAL:
+                long retryTime = ((long) Math.pow(2, retryCount) * retryInterval * 1000L);
+                return retryTime;
+            case PERIODIC:
+                return retryInterval * 1000L;
+            default:
+                throw new UnsupportedOperationException("Retry policy not supported");
+        }
     }
 
     /**

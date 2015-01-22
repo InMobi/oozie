@@ -15,16 +15,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.coord;
 
 import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.text.ParseException;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.security.AccessControlException;
 import org.apache.oozie.CoordinatorActionBean;
 import org.apache.oozie.CoordinatorJobBean;
 import org.apache.oozie.ErrorCode;
@@ -35,6 +39,7 @@ import org.apache.oozie.command.CommandException;
 import org.apache.oozie.command.PreconditionException;
 import org.apache.oozie.coord.CoordELEvaluator;
 import org.apache.oozie.coord.CoordELFunctions;
+import org.apache.oozie.coord.TimeUnit;
 import org.apache.oozie.dependency.URIHandler;
 import org.apache.oozie.dependency.URIHandlerException;
 import org.apache.oozie.executor.jpa.CoordActionGetForInputCheckJPAExecutor;
@@ -44,6 +49,7 @@ import org.apache.oozie.executor.jpa.CoordJobQueryExecutor;
 import org.apache.oozie.executor.jpa.CoordJobQueryExecutor.CoordJobQuery;
 import org.apache.oozie.executor.jpa.JPAExecutorException;
 import org.apache.oozie.service.CallableQueueService;
+import org.apache.oozie.service.ConfigurationService;
 import org.apache.oozie.service.EventHandlerService;
 import org.apache.oozie.service.JPAService;
 import org.apache.oozie.service.Service;
@@ -51,7 +57,6 @@ import org.apache.oozie.service.Services;
 import org.apache.oozie.service.URIHandlerService;
 import org.apache.oozie.util.DateUtils;
 import org.apache.oozie.util.ELEvaluator;
-import org.apache.oozie.util.Instrumentation;
 import org.apache.oozie.util.LogUtils;
 import org.apache.oozie.util.ParamChecker;
 import org.apache.oozie.util.StatusUtils;
@@ -65,6 +70,8 @@ import org.jdom.Element;
  */
 public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
 
+    public static final String COORD_EXECUTION_NONE_TOLERANCE = "oozie.coord.execution.none.tolerance";
+
     private final String actionId;
     /**
      * Property name of command re-queue interval for coordinator action input check in
@@ -72,11 +79,6 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
      */
     public static final String CONF_COORD_INPUT_CHECK_REQUEUE_INTERVAL = Service.CONF_PREFIX
             + "coord.input.check.requeue.interval";
-    /**
-     * Default re-queue interval in ms. It is applied when no value defined in
-     * the oozie configuration.
-     */
-    private final int DEFAULT_COMMAND_REQUEUE_INTERVAL = 60000; // 1 minute
     private CoordinatorActionBean coordAction = null;
     private CoordinatorJobBean coordJob = null;
     private JPAService jpaService = null;
@@ -86,6 +88,45 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
         super("coord_action_input", "coord_action_input", 1);
         this.actionId = ParamChecker.notEmpty(actionId, "actionId");
         this.jobId = jobId;
+    }
+
+    @Override
+    protected void setLogInfo() {
+        LogUtils.setLogInfo(actionId);
+    }
+
+    /**
+     * Computes the nominal time of the next action.
+     * Based on CoordMaterializeTransitionXCommand#materializeActions
+     *
+     * @return the nominal time of the next action
+     * @throws ParseException
+     */
+    private Date computeNextNominalTime() throws ParseException {
+        Date nextNominalTime;
+        boolean isCronFrequency = false;
+        int freq = -1;
+        try {
+            freq = Integer.parseInt(coordJob.getFrequency());
+        } catch (NumberFormatException e) {
+            isCronFrequency = true;
+        }
+
+        if (isCronFrequency) {
+            nextNominalTime = CoordCommandUtils.getNextValidActionTimeForCronFrequency(coordAction.getNominalTime(), coordJob);
+        } else {
+            Calendar nextNominalTimeCal = Calendar.getInstance(DateUtils.getTimeZone(coordJob.getTimeZone()));
+            nextNominalTimeCal.setTime(coordAction.getNominalTime());
+            TimeUnit freqTU = TimeUnit.valueOf(coordJob.getTimeUnitStr());
+            nextNominalTimeCal.add(freqTU.getCalendarUnit(), freq);
+            nextNominalTime = nextNominalTimeCal.getTime();
+        }
+
+        // If the next nominal time is after the job's end time, then this is the last action, so return null
+        if (nextNominalTime.after(coordJob.getEndTime())) {
+            nextNominalTime = null;
+        }
+        return nextNominalTime;
     }
 
     @Override
@@ -108,11 +149,49 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
         }
 
         StringBuilder actionXml = new StringBuilder(coordAction.getActionXml());
-        Instrumentation.Cron cron = new Instrumentation.Cron();
         boolean isChangeInDependency = false;
         try {
             Configuration actionConf = new XConfiguration(new StringReader(coordAction.getRunConf()));
-            cron.start();
+            Date now = new Date();
+            if (coordJob.getExecutionOrder().equals(CoordinatorJobBean.Execution.LAST_ONLY)) {
+                Date nextNominalTime = computeNextNominalTime();
+                if (nextNominalTime != null) {
+                    // If the current time is after the next action's nominal time, then we've passed the window where this action
+                    // should be started; so set it to SKIPPED
+                    if (now.after(nextNominalTime)) {
+                        LOG.info("LAST_ONLY execution: Preparing to skip action [{0}] because the current time [{1}] is later than "
+                                + "the nominal time [{2}] of the next action]", coordAction.getId(),
+                                DateUtils.formatDateOozieTZ(now), DateUtils.formatDateOozieTZ(nextNominalTime));
+                        queue(new CoordActionSkipXCommand(coordAction, coordJob.getUser(), coordJob.getAppName()));
+                        return null;
+                    } else {
+                        LOG.debug("LAST_ONLY execution: Not skipping action [{0}] because the current time [{1}] is earlier than "
+                                + "the nominal time [{2}] of the next action]", coordAction.getId(),
+                                DateUtils.formatDateOozieTZ(now), DateUtils.formatDateOozieTZ(nextNominalTime));
+                    }
+                }
+            }
+            else if (coordJob.getExecutionOrder().equals(CoordinatorJobBean.Execution.NONE)) {
+                // If the current time is after the nominal time of this action plus some tolerance,
+                // then we've passed the window where this action
+                // should be started; so set it to SKIPPED
+                Calendar cal = Calendar.getInstance(DateUtils.getTimeZone(coordJob.getTimeZone()));
+                cal.setTime(nominalTime);
+                cal.add(Calendar.MINUTE, ConfigurationService.getInt(COORD_EXECUTION_NONE_TOLERANCE));
+                nominalTime = cal.getTime();
+                if (now.after(nominalTime)) {
+                    LOG.info("NONE execution: Preparing to skip action [{0}] because the current time [{1}] is later than "
+                            + "the nominal time [{2}] of the current action]", coordAction.getId(),
+                            DateUtils.formatDateOozieTZ(now), DateUtils.formatDateOozieTZ(nominalTime));
+                    queue(new CoordActionSkipXCommand(coordAction, coordJob.getUser(), coordJob.getAppName()));
+                    return null;
+                } else {
+                    LOG.debug("NONE execution: Not skipping action [{0}] because the current time [{1}] is earlier than "
+                            + "the nominal time [{2}] of the current action]", coordAction.getId(),
+                            DateUtils.formatDateOozieTZ(now), DateUtils.formatDateOozieTZ(coordAction.getNominalTime()));
+                }
+            }
+
             StringBuilder existList = new StringBuilder();
             StringBuilder nonExistList = new StringBuilder();
             StringBuilder nonResolvedList = new StringBuilder();
@@ -173,6 +252,22 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
                 updateCoordAction(coordAction, isChangeInDependency);
             }
         }
+        catch (AccessControlException e) {
+            LOG.error("Permission error in ActionInputCheck", e);
+            if (isTimeout(currentTime)) {
+                LOG.debug("Queueing timeout command");
+                Services.get().get(CallableQueueService.class)
+                        .queue(new CoordActionTimeOutXCommand(coordAction, coordJob.getUser(), coordJob.getAppName()));
+            }
+            else {
+                // Requeue InputCheckCommand for permission denied error with longer interval
+                Services.get()
+                        .get(CallableQueueService.class)
+                        .queue(new CoordActionInputCheckXCommand(coordAction.getId(), coordAction.getJobId()),
+                                2 * getCoordInputCheckRequeueInterval());
+            }
+            updateCoordAction(coordAction, isChangeInDependency);
+        }
         catch (Exception e) {
             if (isTimeout(currentTime)) {
                 LOG.debug("Queueing timeout command");
@@ -182,9 +277,6 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
             }
             updateCoordAction(coordAction, isChangeInDependency);
             throw new CommandException(ErrorCode.E1021, e.getMessage(), e);
-        }
-        finally {
-            cron.stop();
         }
         return null;
     }
@@ -239,8 +331,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
      * @return re-queue interval in ms
      */
     public long getCoordInputCheckRequeueInterval() {
-        long requeueInterval = Services.get().getConf().getLong(CONF_COORD_INPUT_CHECK_REQUEUE_INTERVAL,
-                DEFAULT_COMMAND_REQUEUE_INTERVAL);
+        long requeueInterval = ConfigurationService.getLong(CONF_COORD_INPUT_CHECK_REQUEUE_INTERVAL);
         return requeueInterval;
     }
 
@@ -490,8 +581,14 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
         catch (URIHandlerException e) {
             coordAction.setErrorCode(e.getErrorCode().toString());
             coordAction.setErrorMessage(e.getMessage());
-            throw new IOException(e);
-        } catch (URISyntaxException e) {
+            if (e.getCause() != null && e.getCause() instanceof AccessControlException) {
+                throw (AccessControlException) e.getCause();
+            }
+            else {
+                throw new IOException(e);
+            }
+        }
+        catch (URISyntaxException e) {
             coordAction.setErrorCode(ErrorCode.E0906.toString());
             coordAction.setErrorMessage(e.getMessage());
             throw new IOException(e);
@@ -577,7 +674,7 @@ public class CoordActionInputCheckXCommand extends CoordinatorXCommand<Void> {
         catch (JPAExecutorException je) {
             throw new CommandException(je);
         }
-        LogUtils.setLogInfo(coordAction, logInfo);
+        LogUtils.setLogInfo(coordAction);
     }
 
     @Override

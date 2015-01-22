@@ -23,12 +23,12 @@
     <parent>
         <groupId>org.apache.oozie</groupId>
         <artifactId>oozie-main</artifactId>
-        <version>4.1.0-SNAPSHOT</version>
+        <version>4.2.0-SNAPSHOT</version>
     </parent>
 
     <groupId>org.apache.oozie.test</groupId>
     <artifactId>oozie-mini</artifactId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>4.2.0-SNAPSHOT</version>
     <description>Apache Oozie MiniOozie</description>
     <name>Apache Oozie MiniOozie</name>
 
@@ -43,16 +43,6 @@
             <artifactId>oozie-core</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.oozie</groupId>
-            <artifactId>oozie-hadoop</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.oozie</groupId>
-            <artifactId>oozie-hadoop-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -78,6 +68,13 @@
             <version>0.11</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-minicluster</artifactId>
+        </dependency>
     </dependencies>
-
 </project>

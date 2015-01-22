@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.bundle;
 
 import java.util.Date;
@@ -22,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.oozie.BundleActionBean;
 import org.apache.oozie.BundleJobBean;
 import org.apache.oozie.CoordinatorJobBean;
@@ -88,8 +90,8 @@ public class BundleRerunXCommand extends RerunTransitionXCommand<Void> {
         try {
             this.bundleJob = BundleJobQueryExecutor.getInstance().get(BundleJobQuery.GET_BUNDLE_JOB, jobId);
             this.bundleActions = BundleActionQueryExecutor.getInstance().getList(
-                    BundleActionQuery.GET_BUNDLE_ACTIONS_FOR_BUNDLE, jobId);
-            LogUtils.setLogInfo(bundleJob, logInfo);
+                    BundleActionQuery.GET_BUNDLE_ACTIONS_STATUS_UNIGNORED_FOR_BUNDLE, jobId);
+            LogUtils.setLogInfo(bundleJob);
             super.setJob(bundleJob);
             prevPending = bundleJob.isPending();
         }
@@ -138,7 +140,7 @@ public class BundleRerunXCommand extends RerunTransitionXCommand<Void> {
                     LOG.debug("Queuing rerun range [" + rerunDateScope + "] for coord id " + coordId + " of bundle "
                             + bundleJob.getId());
                     queue(new CoordRerunXCommand(coordId, RestConstants.JOB_COORD_SCOPE_DATE, rerunDateScope, refresh,
-                            noCleanup));
+                            noCleanup, false, null));
                     updateBundleAction(coordNameToBAMapping.get(coordName));
                     isUpdateActionDone = true;
                 }
@@ -158,7 +160,7 @@ public class BundleRerunXCommand extends RerunTransitionXCommand<Void> {
                     LOG.debug("Queuing rerun range [" + dateScope + "] for coord id " + action.getCoordId() + " of bundle "
                             + bundleJob.getId());
                     queue(new CoordRerunXCommand(action.getCoordId(), RestConstants.JOB_COORD_SCOPE_DATE, dateScope,
-                            refresh, noCleanup));
+                            refresh, noCleanup, false, null));
                     updateBundleAction(action);
                     isUpdateActionDone = true;
                 }

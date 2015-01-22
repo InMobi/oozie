@@ -15,13 +15,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.coord;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import org.apache.oozie.CoordinatorActionBean;
+import org.apache.oozie.CoordinatorEngine.FILTER_COMPARATORS;
 import org.apache.oozie.CoordinatorJobBean;
 import org.apache.oozie.ErrorCode;
 import org.apache.oozie.XException;
@@ -32,7 +30,12 @@ import org.apache.oozie.executor.jpa.CoordJobGetActionsSubsetJPAExecutor;
 import org.apache.oozie.executor.jpa.CoordJobGetJPAExecutor;
 import org.apache.oozie.service.JPAService;
 import org.apache.oozie.service.Services;
+import org.apache.oozie.util.Pair;
 import org.apache.oozie.util.ParamChecker;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Command for loading a coordinator job information
@@ -40,10 +43,10 @@ import org.apache.oozie.util.ParamChecker;
 public class CoordJobXCommand extends CoordinatorXCommand<CoordinatorJobBean> {
     private final String id;
     private final boolean getActionInfo;
-    private int start = 1;
+    private int offset = 1;
     private int len = Integer.MAX_VALUE;
     private boolean desc = false;
-    private List<String> filterList;
+    private Map<Pair<String, FILTER_COMPARATORS>, List<Object>> filterMap;
 
     /**
      * Constructor for loading a coordinator job information
@@ -51,22 +54,24 @@ public class CoordJobXCommand extends CoordinatorXCommand<CoordinatorJobBean> {
      * @param id coord jobId
      */
     public CoordJobXCommand(String id) {
-        this(id, Collections.<String>emptyList(), 1, Integer.MAX_VALUE, false);
+        this(id, null, 1, Integer.MAX_VALUE, false);
     }
 
     /**
      * Constructor for loading a coordinator job information
-     *
      * @param id coord jobId
-     * @param start starting index in the list of actions belonging to the job
+     * @param filterMap
+     * @param offset starting index in the list of actions belonging to the job
      * @param length number of actions to be returned
+     * @param desc boolean for whether the actions returned are in descending order
      */
-    public CoordJobXCommand(String id, List<String> filterList, int start, int length, boolean desc) {
+    public CoordJobXCommand(String id, Map<Pair<String, FILTER_COMPARATORS>, List<Object>> filterMap, int offset,
+        int length, boolean desc) {
         super("job.info", "job.info", 1);
         this.id = ParamChecker.notEmpty(id, "id");
         this.getActionInfo = true;
-        this.filterList = filterList;
-        this.start = start;
+        this.filterMap = filterMap;
+        this.offset = offset;
         this.len = length;
         this.desc = desc;
     }
@@ -130,8 +135,8 @@ public class CoordJobXCommand extends CoordinatorXCommand<CoordinatorJobBean> {
                         coordActions = new ArrayList<CoordinatorActionBean>();
                     }
                     else {
-                        coordActions = jpaService.execute(new CoordJobGetActionsSubsetJPAExecutor(id, filterList,
-                                start, len, desc));
+                        coordActions = jpaService.execute(new CoordJobGetActionsSubsetJPAExecutor(id, filterMap, offset,
+                                len, desc));
                     }
                     coordJob.setActions(coordActions);
                     coordJob.setNumActions(numAction);

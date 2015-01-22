@@ -6,22 +6,25 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.action;
 
+import org.apache.commons.lang.StringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.oozie.client.WorkflowAction;
 import org.apache.oozie.client.WorkflowJob;
+import org.apache.oozie.service.ConfigurationService;
 import org.apache.oozie.util.ELEvaluator;
 import org.apache.oozie.util.ParamChecker;
 import org.apache.oozie.util.XLog;
@@ -47,7 +50,11 @@ public abstract class ActionExecutor {
      */
 	public static final String CONF_PREFIX = "oozie.action.";
 
-	public static final String MAX_RETRIES = CONF_PREFIX + "retries.max";
+    public static final String MAX_RETRIES = CONF_PREFIX + "retries.max";
+
+    public static final String ACTION_RETRY_INTERVAL = CONF_PREFIX + "retry.interval";
+
+    public static final String ACTION_RETRY_POLICY = CONF_PREFIX + "retry.policy";
 
     /**
      * Error code used by {@link #convertException} when there is not register error information for an exception.
@@ -55,6 +62,10 @@ public abstract class ActionExecutor {
     public static final String ERROR_OTHER = "OTHER";
     
     public boolean requiresNNJT = false;
+
+    public static enum RETRYPOLICY {
+        EXPONENTIAL, PERIODIC
+    }
 
     private static class ErrorInfo {
         ActionExecutorException.ErrorType errorType;
@@ -213,6 +224,7 @@ public abstract class ActionExecutor {
     private String type;
     private int maxRetries;
     private long retryInterval;
+    private RETRYPOLICY retryPolicy;
 
     /**
      * Create an action executor with default retry parameters.
@@ -227,13 +239,27 @@ public abstract class ActionExecutor {
      * Create an action executor.
      *
      * @param type action executor type.
-     * @param retryAttempts retry attempts.
-     * @param retryInterval retry interval, in seconds.
+     * @param defaultRetryInterval retry interval, in seconds.
      */
-    protected ActionExecutor(String type, long retryInterval) {
+    protected ActionExecutor(String type, long defaultRetryInterval) {
         this.type = ParamChecker.notEmpty(type, "type");
-        this.maxRetries = getOozieConf().getInt(MAX_RETRIES, 3);
-        this.retryInterval = retryInterval;
+        this.maxRetries = ConfigurationService.getInt(MAX_RETRIES);
+        int retryInterval = ConfigurationService.getInt(ACTION_RETRY_INTERVAL);
+        this.retryInterval = retryInterval > 0 ? retryInterval : defaultRetryInterval;
+        this.retryPolicy = getRetryPolicyFromConf();
+    }
+
+    private RETRYPOLICY getRetryPolicyFromConf() {
+        String retryPolicy = ConfigurationService.get(ACTION_RETRY_POLICY);
+        if (StringUtils.isBlank(retryPolicy)) {
+            return RETRYPOLICY.PERIODIC;
+        } else {
+            try {
+                return RETRYPOLICY.valueOf(retryPolicy.toUpperCase().trim());
+            } catch (IllegalArgumentException e) {
+                return RETRYPOLICY.PERIODIC;
+            }
+        }
     }
 
     /**
@@ -353,6 +379,24 @@ public abstract class ActionExecutor {
      */
     public void setMaxRetries(int maxRetries) {
         this.maxRetries = maxRetries;
+    }
+
+    /**
+     * Return the retry policy for the action executor.
+     *
+     * @return the retry policy for the action executor.
+     */
+    public RETRYPOLICY getRetryPolicy() {
+        return retryPolicy;
+    }
+
+    /**
+     * Sets the retry policy for the action executor.
+     *
+     * @param retryPolicy retry policy for the action executor.
+     */
+    public void setRetryPolicy(RETRYPOLICY retryPolicy) {
+        this.retryPolicy = retryPolicy;
     }
 
     /**

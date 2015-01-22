@@ -22,12 +22,12 @@
     <parent>
         <groupId>org.apache.oozie</groupId>
         <artifactId>oozie-main</artifactId>
-        <version>4.1.0-SNAPSHOT</version>
+        <version>4.2.0-SNAPSHOT</version>
         <relativePath>../..</relativePath>
     </parent>
     <groupId>org.apache.oozie</groupId>
     <artifactId>oozie-sharelib-hcatalog</artifactId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>4.2.0-SNAPSHOT</version>
     <description>Apache Oozie Share Lib HCatalog</description>
     <name>Apache Oozie Share Lib HCatalog</name>
     <packaging>jar</packaging>
@@ -39,14 +39,10 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.apache.oozie</groupId>
-            <artifactId>oozie-hcatalog</artifactId>
+            <groupId>org.apache.hive.hcatalog</groupId>
+            <artifactId>hive-webhcat-java-client</artifactId>
             <scope>compile</scope>
             <exclusions>
-                <exclusion>
-                    <groupId>org.apache.hcatalog</groupId>
-                    <artifactId>hcatalog-server-extensions</artifactId>
-                </exclusion>
                 <exclusion>
                     <groupId>org.apache.hive</groupId>
                     <artifactId>hive-builtins</artifactId>
@@ -203,18 +199,24 @@
                     <groupId>antlr</groupId>
                     <artifactId>antlr</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-exec</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
+
         <dependency>
-            <groupId>org.apache.oozie</groupId>
-            <artifactId>oozie-hadoop</artifactId>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client</artifactId>
             <scope>provided</scope>
         </dependency>
+
         <dependency>
-            <groupId>org.apache.oozie</groupId>
-            <artifactId>oozie-hadoop-test</artifactId>
-            <scope>test</scope>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-minicluster</artifactId>
         </dependency>
+
         <dependency>
             <groupId>org.apache.oozie</groupId>
             <artifactId>oozie-sharelib-oozie</artifactId>

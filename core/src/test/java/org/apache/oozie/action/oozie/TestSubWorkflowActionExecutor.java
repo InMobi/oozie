@@ -6,15 +6,16 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.action.oozie;
 
 import org.apache.hadoop.conf.Configuration;
@@ -414,7 +415,8 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
         Path subWorkflowAppPath = getFsTestCaseDir();
         FileSystem fs = getFileSystem();
         Writer writer = new OutputStreamWriter(fs.create(new Path(subWorkflowAppPath, "workflow.xml")));
-
+        // Infinitly recursive workflow
+        
         String appStr = "<workflow-app xmlns=\"uri:oozie:workflow:0.4\" name=\"workflow\">" +
                 "<start to=\"subwf\"/>" +
                 "<action name=\"subwf\">" +
@@ -559,5 +561,77 @@ public class TestSubWorkflowActionExecutor extends ActionExecutorTestCase {
                 + "</kill>"
                 + "<end name='end' />"
                 + "</workflow-app>";
+    }
+
+    public void testSubWorkflowRerun() throws Exception {
+        try {
+            Path subWorkflowAppPath = getFsTestCaseDir();
+            FileSystem fs = getFileSystem();
+            Path subWorkflowPath = new Path(subWorkflowAppPath, "workflow.xml");
+            Writer writer = new OutputStreamWriter(fs.create(subWorkflowPath));
+            writer.write(getLazyWorkflow());
+            writer.close();
+            String workflowUri = getTestCaseFileUri("workflow.xml");
+            String appXml = "<workflow-app xmlns=\"uri:oozie:workflow:0.4\" name=\"workflow\">" +
+                    "<start to=\"subwf\"/>" +
+                    "<action name=\"subwf\">" +
+                    "     <sub-workflow xmlns='uri:oozie:workflow:0.4'>" +
+                    "          <app-path>" + subWorkflowAppPath.toString() + "</app-path>" +
+                    "     </sub-workflow>" +
+                    "     <ok to=\"end\"/>" +
+                    "     <error to=\"fail\"/>" +
+                    "</action>" +
+                    "<kill name=\"fail\">" +
+                    "     <message>Sub workflow failed, error message[${wf:errorMessage(wf:lastErrorNode())}]</message>" +
+                    "</kill>" +
+                    "<end name=\"end\"/>" +
+                    "</workflow-app>";
+
+            writeToFile(appXml, workflowUri);
+            LocalOozie.start();
+            final OozieClient wfClient = LocalOozie.getClient();
+            Properties conf = wfClient.createConfiguration();
+            conf.setProperty(OozieClient.APP_PATH, workflowUri);
+            conf.setProperty(OozieClient.USER_NAME, getTestUser());
+            conf.setProperty("appName", "var-app-name");
+            final String jobId = wfClient.submit(conf);
+            wfClient.start(jobId);
+
+            waitFor(JOB_TIMEOUT, new Predicate() {
+                public boolean evaluate() throws Exception {
+                    return (wfClient.getJobInfo(jobId).getStatus() == WorkflowJob.Status.RUNNING) &&
+                            (wfClient.getJobInfo(jobId).getActions().get(1).getStatus() == WorkflowAction.Status.RUNNING);
+                }
+            });
+
+            String subWorkflowExternalId = wfClient.getJobInfo(jobId).getActions().get(1).getExternalId();
+            wfClient.kill(wfClient.getJobInfo(jobId).getActions().get(1).getExternalId());
+
+            waitFor(JOB_TIMEOUT, new Predicate() {
+                public boolean evaluate() throws Exception {
+                    return (wfClient.getJobInfo(jobId).getStatus() == WorkflowJob.Status.KILLED) &&
+                            (wfClient.getJobInfo(jobId).getActions().get(1).getStatus() == WorkflowAction.Status.ERROR);
+                }
+            });
+
+            conf.setProperty(OozieClient.RERUN_FAIL_NODES, "true");
+            wfClient.reRun(jobId,conf);
+
+            waitFor(JOB_TIMEOUT, new Predicate() {
+                public boolean evaluate() throws Exception {
+                    return (wfClient.getJobInfo(jobId).getStatus() == WorkflowJob.Status.SUCCEEDED) &&
+                            (wfClient.getJobInfo(jobId).getActions().get(2).getStatus() == WorkflowAction.Status.OK);
+
+                }
+            });
+
+            WorkflowJob job = wfClient.getJobInfo(wfClient.getJobInfo(jobId).getActions().get(2).getExternalId());
+            assertEquals(job.getStatus(), WorkflowJob.Status.SUCCEEDED);
+            assertEquals(job.getId(), subWorkflowExternalId);
+
+        } finally {
+            LocalOozie.stop();
+        }
+
     }
 }

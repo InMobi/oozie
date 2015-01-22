@@ -6,15 +6,16 @@
  * to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance
  * with the License.  You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.action.oozie;
 
 import org.apache.oozie.client.OozieClientException;
@@ -23,6 +24,7 @@ import org.apache.oozie.action.ActionExecutorException;
 import org.apache.oozie.DagEngine;
 import org.apache.oozie.LocalOozieClient;
 import org.apache.oozie.WorkflowJobBean;
+import org.apache.oozie.service.ConfigurationService;
 import org.apache.oozie.service.DagEngineService;
 import org.apache.oozie.client.WorkflowAction;
 import org.apache.oozie.client.OozieClient;
@@ -50,6 +52,7 @@ public class SubWorkflowActionExecutor extends ActionExecutor {
     public static final String PARENT_ID = "oozie.wf.parent.id";
     public static final String SUBWORKFLOW_MAX_DEPTH = "oozie.action.subworkflow.max.depth";
     private static final String SUBWORKFLOW_DEPTH = "oozie.action.subworkflow.depth";
+    public static final String SUBWORKFLOW_RERUN = "oozie.action.subworkflow.rerun";
 
     private static final Set<String> DISALLOWED_DEFAULT_PROPERTIES = new HashSet<String>();
 
@@ -122,8 +125,8 @@ public class SubWorkflowActionExecutor extends ActionExecutor {
     }
 
     protected void verifyAndInjectSubworkflowDepth(Configuration parentConf, Configuration conf) throws ActionExecutorException {
-        int depth = conf.getInt(SUBWORKFLOW_DEPTH, 0);
-        int maxDepth = Services.get().getConf().getInt(SUBWORKFLOW_MAX_DEPTH, 50);
+        int depth = parentConf.getInt(SUBWORKFLOW_DEPTH, 0);
+        int maxDepth = ConfigurationService.getInt(SUBWORKFLOW_MAX_DEPTH);
         if (depth >= maxDepth) {
             throw new ActionExecutorException(ActionExecutorException.ErrorType.ERROR, "SUBWF001",
                     "Depth [{0}] cannot exceed maximum subworkflow depth [{1}]", (depth + 1), maxDepth);
@@ -178,8 +181,15 @@ public class SubWorkflowActionExecutor extends ActionExecutor {
                 //TODO: this has to be refactored later to be done in a single place for REST calls and this
                 JobUtils.normalizeAppPath(context.getWorkflow().getUser(), context.getWorkflow().getGroup(),
                                           subWorkflowConf);
-
-                subWorkflowId = oozieClient.run(subWorkflowConf.toProperties());
+                // if the rerun failed node option is provided during the time of rerun command, old subworkflow will
+                // rerun again.
+                if(action.getExternalId() != null && parentConf.getBoolean(OozieClient.RERUN_FAIL_NODES, false)) {
+                    subWorkflowConf.setBoolean(SUBWORKFLOW_RERUN, true);
+                    oozieClient.reRun(action.getExternalId(), subWorkflowConf.toProperties());
+                    subWorkflowId = action.getExternalId();
+                } else {
+                    subWorkflowId = oozieClient.run(subWorkflowConf.toProperties());
+                }
             }
             else {
                 subWorkflowId = runningJobId;

@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.servlet;
 
 import java.io.IOException;
@@ -37,6 +38,8 @@ import org.apache.oozie.client.CoordinatorAction;
 import org.apache.oozie.client.CoordinatorJob;
 import org.apache.oozie.client.CoordinatorJob.Execution;
 import org.apache.oozie.client.rest.RestConstants;
+import org.apache.oozie.command.CommandException;
+import org.apache.oozie.command.coord.CoordUpdateXCommand;
 import org.apache.oozie.service.CoordinatorEngineService;
 import org.apache.oozie.util.DateUtils;
 
@@ -54,9 +57,12 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
     public static String did = null;
     public static Integer offset = null;
     public static Integer length = null;
+    public static String order = null;
+    public static String filter = null;
     public static List<CoordinatorJob> coordJobs;
     public static List<Boolean> started;
     public static final int INIT_COORD_COUNT = 4;
+
 
     static {
         reset();
@@ -66,6 +72,8 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
         did = null;
         offset = null;
         length = null;
+        order = null;
+        filter = null;
         coordJobs = new ArrayList<CoordinatorJob>();
         started = new ArrayList<Boolean>();
         for (int i = 0; i < INIT_COORD_COUNT; i++) {
@@ -152,7 +160,7 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
         public void change(String jobId, String changeValue) throws CoordinatorEngineException {
             did = RestConstants.JOB_ACTION_CHANGE;
             int idx = validateCoordinatorIdx(jobId);
-            started.set(idx, false);
+            started.set(idx, true);
         }
 
         @Override
@@ -161,8 +169,15 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
         }
 
         @Override
+        public CoordinatorActionInfo ignore(String jobId, String type, String scope) throws CoordinatorEngineException {
+            did = RestConstants.JOB_ACTION_IGNORE;
+            int idx = validateCoordinatorIdx(jobId);
+            started.set(idx, true);
+            return null;
+        }
+        @Override
         public CoordinatorActionInfo reRun(String jobId, String rerunType, String scope, boolean refresh,
-                boolean noCleanup) throws BaseEngineException {
+                boolean noCleanup, boolean failed, Configuration conf) throws BaseEngineException {
             did = RestConstants.JOB_COORD_ACTION_RERUN;
             int idx = validateCoordinatorIdx(jobId);
             started.set(idx, true);
@@ -187,8 +202,17 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
             did = RestConstants.JOB_SHOW_INFO;
             MockCoordinatorEngineService.offset = start;
             MockCoordinatorEngineService.length = length;
+            MockCoordinatorEngineService.order = desc ? "desc" : "asc";
+            MockCoordinatorEngineService.filter = filter;
             int idx = validateCoordinatorIdx(jobId);
             return (CoordinatorJobBean) coordJobs.get(idx);
+        }
+
+        @Override
+        public String getJobStatus(String jobId) throws CoordinatorEngineException {
+            did = RestConstants.JOB_SHOW_STATUS;
+            int idx = validateCoordinatorIdx(jobId);
+            return coordJobs.get(idx).getStatus().toString();
         }
 
         @Override
@@ -211,6 +235,19 @@ public class MockCoordinatorEngineService extends CoordinatorEngineService {
             did = RestConstants.JOB_SHOW_LOG;
             validateCoordinatorIdx(jobId);
             writer.write(LOG);
+        }
+
+        @Override
+        public String updateJob(Configuration conf, String jobId, boolean dryrun, boolean showDiff)
+                throws CoordinatorEngineException {
+            if (dryrun) {
+                did = RestConstants.JOB_COORD_UPDATE + "&" + RestConstants.JOB_ACTION_DRYRUN;
+            }
+            else {
+                did = RestConstants.JOB_COORD_UPDATE;
+            }
+            validateCoordinatorIdx(jobId);
+            return "";
         }
 
         private int validateCoordinatorIdx(String jobId) throws CoordinatorEngineException {

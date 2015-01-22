@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.service;
 
 import java.util.Collection;
@@ -22,7 +23,6 @@ import java.util.Collection;
 import org.apache.oozie.dependency.hcat.EhcacheHCatDependencyCache;
 import org.apache.oozie.util.HCatURI;
 import org.apache.oozie.util.XLog;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class TestPartitionDependencyManagerEhcache extends TestPartitionDependencyManagerService {
@@ -47,7 +47,6 @@ public class TestPartitionDependencyManagerEhcache extends TestPartitionDependen
         super.testPartitionDependency();
     }
 
-    @Ignore
     @Override
     @Test
     public void testMemoryUsageAndSpeed() throws Exception {
@@ -133,5 +132,4 @@ public class TestPartitionDependencyManagerEhcache extends TestPartitionDependen
             assertTrue(dep.toURIString() + " is missing in cache", waitingActions.contains(actionID));
         }
     }
-
 }

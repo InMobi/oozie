@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.command.wf;
 
 import org.apache.oozie.ErrorCode;
@@ -56,6 +57,11 @@ public class SuspendXCommand extends WorkflowXCommand<Void> {
     }
 
     @Override
+    protected void setLogInfo() {
+        LogUtils.setLogInfo(wfid);
+    }
+
+    @Override
     protected Void execute() throws CommandException {
         InstrumentUtils.incrJobCounter(getName(), 1, getInstrumentation());
         try {
@@ -64,7 +70,7 @@ public class SuspendXCommand extends WorkflowXCommand<Void> {
             updateList.add(new UpdateEntry<WorkflowJobQuery>(WorkflowJobQuery.UPDATE_WORKFLOW_STATUS_INSTANCE_MODIFIED,
                     this.wfJobBean));
             BatchQueryExecutor.getInstance().executeBatchInsertUpdateDelete(null, updateList, null);
-            queue(new NotificationXCommand(this.wfJobBean));
+            queue(new WorkflowNotificationXCommand(this.wfJobBean));
             //Calling suspend recursively to handle parent workflow
             suspendParentWorkFlow();
         }
@@ -166,7 +172,7 @@ public class SuspendXCommand extends WorkflowXCommand<Void> {
         catch (Exception ex) {
             throw new CommandException(ErrorCode.E0603, ex.getMessage(), ex);
         }
-        LogUtils.setLogInfo(this.wfJobBean, logInfo);
+        LogUtils.setLogInfo(this.wfJobBean);
     }
 
     @Override
@@ -200,6 +206,7 @@ public class SuspendXCommand extends WorkflowXCommand<Void> {
         catch (Exception ex) {
             throw new CommandException(ErrorCode.E0603, ex.getMessage(), ex);
         }
+        LogUtils.setLogInfo(wfJobBean);
     }
 
     @Override

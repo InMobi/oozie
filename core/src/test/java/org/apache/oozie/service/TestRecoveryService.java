@@ -15,6 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.apache.oozie.service;
 
 import org.apache.hadoop.conf.Configuration;
@@ -94,7 +95,7 @@ public class TestRecoveryService extends XDataTestCase {
         setSystemProperty(SchemaService.WF_CONF_EXT_SCHEMAS, "wf-ext-schema.xsd");
         services = new Services();
         services.init();
-        services.get(ActionService.class).register(ForTestingActionExecutor.class);
+        services.get(ActionService.class).registerAndInitExecutor(ForTestingActionExecutor.class);
 
     }
 
