@@ -37,10 +37,10 @@ public class PopulatorMetricsReportingManagerService {
     private long graphiteReportIntervalSec;
 
     public PopulatorMetricsReportingManagerService() {
-        GRAPHITE_HOST=ConfigurationService.get("GRAPHITE_HOST");
-        GRAPHITE_METRICS_PREFIX=ConfigurationService.get("GRAPHITE_METRICS_PREFIX");
-        GRAPHITE_REPORT_INTERVAL_SEC=ConfigurationService.getLong("GRAPHITE_REPORT_INTERVAL_SEC");
-        GRAPHITE_PORT=ConfigurationService.getInt("GRAPHITE_PORT");
+        GRAPHITE_HOST = ConfigurationService.get("GRAPHITE_HOST");
+        GRAPHITE_METRICS_PREFIX = ConfigurationService.get("GRAPHITE_METRICS_PREFIX");
+        GRAPHITE_REPORT_INTERVAL_SEC = ConfigurationService.getLong("GRAPHITE_REPORT_INTERVAL_SEC");
+        GRAPHITE_PORT = ConfigurationService.getInt("GRAPHITE_PORT");
     }
 
     public void init(MetricRegistry metricRegistry) {
