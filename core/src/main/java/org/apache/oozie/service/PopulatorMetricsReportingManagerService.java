@@ -27,14 +27,21 @@ import com.codahale.metrics.graphite.GraphiteReporter;
 
 public class PopulatorMetricsReportingManagerService {
 
-    private static final String GRAPHITE_HOST = "metrics-relay.vip.lhr1.inmobi.com";
-    private static final String GRAPHITE_METRICS_PREFIX = "prod.lhr1.grid.LHR1_1.streaming_populator.OOZIE_METRICS";
+    private String GRAPHITE_HOST;
+    private String GRAPHITE_METRICS_PREFIX;
 
-    private long DEFAULT_GRAPHITE_REPORT_INTERVAL_SEC = 60;
-    private int GRAPHITE_PORT = 2020;
+    private long GRAPHITE_REPORT_INTERVAL_SEC;
+    private int GRAPHITE_PORT;
 
     private GraphiteReporter graphiteReporter = null;
     private long graphiteReportIntervalSec;
+
+    public PopulatorMetricsReportingManagerService() {
+        GRAPHITE_HOST=ConfigurationService.get("GRAPHITE_HOST");
+        GRAPHITE_METRICS_PREFIX=ConfigurationService.get("GRAPHITE_METRICS_PREFIX");
+        GRAPHITE_REPORT_INTERVAL_SEC=ConfigurationService.getLong("GRAPHITE_REPORT_INTERVAL_SEC");
+        GRAPHITE_PORT=ConfigurationService.getInt("GRAPHITE_PORT");
+    }
 
     public void init(MetricRegistry metricRegistry) {
         // Initialize graphite reporting related objects
@@ -42,7 +49,7 @@ public class PopulatorMetricsReportingManagerService {
         graphiteReporter =
                 GraphiteReporter.forRegistry(metricRegistry).prefixedWith(GRAPHITE_METRICS_PREFIX)
                         .convertDurationsTo(TimeUnit.SECONDS).filter(MetricFilter.ALL).build(graphite);
-        graphiteReportIntervalSec =  DEFAULT_GRAPHITE_REPORT_INTERVAL_SEC;
+        graphiteReportIntervalSec = GRAPHITE_REPORT_INTERVAL_SEC;
 
     }
 
