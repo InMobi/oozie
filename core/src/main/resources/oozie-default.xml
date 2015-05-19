@@ -37,6 +37,26 @@
     </property>
 
     <property>
+        <name>GRAPHITE_HOST</name>
+        <value>metrics-relay.vip.lhr1.inmobi.com</value>
+    </property>
+
+    <property>
+        <name>GRAPHITE_METRICS_PREFIX</name>
+        <value>prod.lhr1.grid.LHR1_1.streaming_populator.OOZIE_METRICS</value>
+    </property>
+
+    <property>
+        <name>GRAPHITE_REPORT_INTERVAL_SEC</name>
+        <value>60</value>
+    </property>
+
+    <property>
+        <name>GRAPHITE_PORT</name>
+        <value>2020</value>
+    </property>
+
+    <property>
         <name>oozie.action.mapreduce.uber.jar.enable</name>
         <value>false</value>
         <description>

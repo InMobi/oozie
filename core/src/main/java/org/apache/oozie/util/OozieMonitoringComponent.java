@@ -42,20 +42,20 @@ public class OozieMonitoringComponent {
         counterMap = new HashMap<String, Counter>();
     }
 
-    private  String getModifiedName(String group, String name) {
+    private  String getModifiedName(String type, String group, String name) {
         group = group.replace(DOT, HIPHEN);
         name = name.replace(DOT, HIPHEN);
-        return group.concat(DOT).concat(name);
+        return type.concat(DOT).concat(group).concat(DOT).concat(name);
     }
 
     public void initializeCounter(String group, String name) {
-        String counterName = getModifiedName(group, name);
+        String counterName = getModifiedName("Counter",group, name);
         Counter counter = metricRegistry.counter(MetricRegistry.name(counterName));
         counterMap.put(counterName, counter);
     }
 
     public void incrCounter(String group, String name, long count) {
-        String counterName = getModifiedName(group, name);
+        String counterName = getModifiedName("Counter",group, name);
         Counter counter = counterMap.get(counterName);
         counter.inc(count);
     }
@@ -63,7 +63,7 @@ public class OozieMonitoringComponent {
     public void monitorVariable(String group, String name, Instrumentation.Variable variable) {
         if (group.equals("jobstatus") || group.equals("jvm") || group.equals("locks") ||
                 group.equals("windowjobstatus")) {
-            String counterName = getModifiedName(group, name);
+            String counterName = getModifiedName("Variable",group, name);
             final Instrumentation.Variable<Long> value = variable;
             metricRegistry.register(MetricRegistry.name(counterName), new Gauge<Long>() {
                 @Override
@@ -76,13 +76,13 @@ public class OozieMonitoringComponent {
 
     public void monitorSampler(String group, String name, Instrumentation.Variable<Long> variable) {
         final Instrumentation.Variable<Long> value = variable;
-        String counterName = getModifiedName(group, name);
+        String counterName = getModifiedName("Sampler",group, name);
         metricRegistry.register(MetricRegistry.name(counterName), new Gauge<Long>() {
-                    @Override
-                    public Long getValue() {
-                        return value.getValue();
-                    }
-                });
+            @Override
+            public Long getValue() {
+                return value.getValue();
+            }
+        });
     }
 
 }
