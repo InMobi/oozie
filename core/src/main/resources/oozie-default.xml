@@ -37,13 +37,21 @@
     </property>
 
     <property>
+        <name>oozie.functional_monitoring.enable</name>
+        <value>false</value>
+        <description>
+            If the oozie functional metrics needs to be exposed to the graphite backend, set it to true
+        </description>
+    </property>
+
+    <property>
         <name>GRAPHITE_HOST</name>
-        <value>metrics-relay.vip.lhr1.inmobi.com</value>
+        <value>localhost</value>
     </property>
 
     <property>
         <name>GRAPHITE_METRICS_PREFIX</name>
-        <value>prod.lhr1.grid.LHR1_1.streaming_populator.OOZIE_METRICS</value>
+        <value>oozie_metrics</value>
     </property>
 
     <property>
