@@ -40,27 +40,32 @@
         <name>oozie.functional_monitoring.enable</name>
         <value>false</value>
         <description>
-            If the oozie functional metrics needs to be exposed to the graphite backend, set it to true
+            If the oozie functional metrics needs to be exposed to the metrics-server backend, set it to true
         </description>
     </property>
 
     <property>
-        <name>GRAPHITE_HOST</name>
+        <name>METRICS_SERVER_NAME</name>
+        <value>graphite</value>
+    </property>
+
+    <property>
+        <name>METRICS_HOST</name>
         <value>localhost</value>
     </property>
 
     <property>
-        <name>GRAPHITE_METRICS_PREFIX</name>
+        <name>METRICS_PREFIX</name>
         <value>oozie_metrics</value>
     </property>
 
     <property>
-        <name>GRAPHITE_REPORT_INTERVAL_SEC</name>
+        <name>METRICS_REPORT_INTERVAL_SEC</name>
         <value>60</value>
     </property>
 
     <property>
-        <name>GRAPHITE_PORT</name>
+        <name>METRICS_PORT</name>
         <value>2020</value>
     </property>
 

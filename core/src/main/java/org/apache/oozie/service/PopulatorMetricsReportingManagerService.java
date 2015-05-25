@@ -18,43 +18,69 @@
 
 package org.apache.oozie.service;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.concurrent.TimeUnit;
 import com.codahale.metrics.MetricFilter;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.ganglia.GangliaReporter;
 import com.codahale.metrics.graphite.Graphite;
 import com.codahale.metrics.graphite.GraphiteReporter;
+import info.ganglia.gmetric4j.gmetric.GMetric;
 
 public class PopulatorMetricsReportingManagerService {
 
-    private String GRAPHITE_HOST;
-    private String GRAPHITE_METRICS_PREFIX;
+    private static final String GRAPHITE="graphite";
+    private static final String GANGLIA="ganglia";
+    private static final String METRICS_SERVER_NAME ="METRICS_SERVER_NAME";
+    private String METRICS_HOST;
+    private String METRICS_PREFIX;
 
-    private long GRAPHITE_REPORT_INTERVAL_SEC;
-    private int GRAPHITE_PORT;
+    private long METRICS_REPORT_INTERVAL_SEC;
+    private int METRICS_PORT;
 
     private GraphiteReporter graphiteReporter = null;
-    private long graphiteReportIntervalSec;
+    private GangliaReporter gangliaReporter = null;
+    private long metricsReportIntervalSec;
 
     public PopulatorMetricsReportingManagerService() {
-        GRAPHITE_HOST = ConfigurationService.get("GRAPHITE_HOST");
-        GRAPHITE_METRICS_PREFIX = ConfigurationService.get("GRAPHITE_METRICS_PREFIX");
-        GRAPHITE_REPORT_INTERVAL_SEC = ConfigurationService.getLong("GRAPHITE_REPORT_INTERVAL_SEC");
-        GRAPHITE_PORT = ConfigurationService.getInt("GRAPHITE_PORT");
+        METRICS_HOST = ConfigurationService.get("METRICS_HOST");
+        METRICS_PREFIX = ConfigurationService.get("METRICS_PREFIX");
+        METRICS_REPORT_INTERVAL_SEC = ConfigurationService.getLong("METRICS_REPORT_INTERVAL_SEC");
+        METRICS_PORT = ConfigurationService.getInt("METRICS_PORT");
     }
 
     public void init(MetricRegistry metricRegistry) {
-        // Initialize graphite reporting related objects
-        Graphite graphite = new Graphite(new InetSocketAddress(GRAPHITE_HOST, GRAPHITE_PORT));
-        graphiteReporter =
-                GraphiteReporter.forRegistry(metricRegistry).prefixedWith(GRAPHITE_METRICS_PREFIX)
-                        .convertDurationsTo(TimeUnit.SECONDS).filter(MetricFilter.ALL).build(graphite);
-        graphiteReportIntervalSec = GRAPHITE_REPORT_INTERVAL_SEC;
 
+        if(ConfigurationService.get(METRICS_SERVER_NAME).equals(GRAPHITE)) {
+            Graphite graphite = new Graphite(new InetSocketAddress(METRICS_HOST, METRICS_PORT));
+            graphiteReporter = GraphiteReporter.forRegistry(metricRegistry).prefixedWith(METRICS_PREFIX)
+                    .convertDurationsTo(TimeUnit.SECONDS).filter(MetricFilter.ALL).build(graphite);
+        }
+
+        if(ConfigurationService.get(METRICS_SERVER_NAME).equals(GANGLIA)) {
+            GMetric ganglia = null;
+            try {
+                ganglia = new GMetric(METRICS_HOST, METRICS_PORT, GMetric.UDPAddressingMode.MULTICAST, 1);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            gangliaReporter = GangliaReporter.forRegistry(metricRegistry)
+                    .convertRatesTo(TimeUnit.SECONDS)
+                    .convertDurationsTo(TimeUnit.MILLISECONDS)
+                    .build(ganglia);
+        }
+
+        metricsReportIntervalSec = METRICS_REPORT_INTERVAL_SEC;
     }
 
     public void start() {
-        graphiteReporter.start(graphiteReportIntervalSec, TimeUnit.SECONDS);
+        if(ConfigurationService.get(METRICS_SERVER_NAME).toLowerCase().equals(GRAPHITE)) {
+            graphiteReporter.start(metricsReportIntervalSec, TimeUnit.SECONDS);
+        }
+        if(ConfigurationService.get(METRICS_SERVER_NAME).toLowerCase().equals(GANGLIA)) {
+            gangliaReporter.start(metricsReportIntervalSec, TimeUnit.SECONDS);
+        }
     }
 
     public void stop() {
@@ -64,6 +90,14 @@ public class PopulatorMetricsReportingManagerService {
                 graphiteReporter.report();
             } finally {
                 graphiteReporter.stop();
+            }
+        }
+        if (gangliaReporter != null) {
+            try {
+                // reporting final metrics into graphite before stopping
+                gangliaReporter.report();
+            } finally {
+                gangliaReporter.stop();
             }
         }
     }
