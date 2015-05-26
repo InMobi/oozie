@@ -22,7 +22,7 @@ import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
 
-import org.apache.oozie.service.PopulatorMetricsReportingManagerService;
+import org.apache.oozie.service.PopulatorMetricsReportingManager;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -30,13 +30,13 @@ import java.util.Map;
 public class OozieMonitoringComponent {
     public static final String DOT = ".";
     public static final String HIPHEN = "-";
-    private PopulatorMetricsReportingManagerService metricsReporter;
+    private PopulatorMetricsReportingManager metricsReporter;
     private MetricRegistry metricRegistry;
     private Map<String, Counter> counterMap;
 
     public OozieMonitoringComponent() {
         metricRegistry = new MetricRegistry();
-        metricsReporter = new PopulatorMetricsReportingManagerService();
+        metricsReporter = new PopulatorMetricsReportingManager();
         metricsReporter.init(metricRegistry);
         metricsReporter.start();
         counterMap = new HashMap<String, Counter>();

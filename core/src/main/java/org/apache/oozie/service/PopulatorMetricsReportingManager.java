@@ -27,8 +27,8 @@ import com.codahale.metrics.ganglia.GangliaReporter;
 import com.codahale.metrics.graphite.Graphite;
 import com.codahale.metrics.graphite.GraphiteReporter;
 import info.ganglia.gmetric4j.gmetric.GMetric;
-
-public class PopulatorMetricsReportingManagerService {
+import org.apache.oozie.util.Instrumentation;
+public class PopulatorMetricsReportingManager {
 
     private static final String GRAPHITE="graphite";
     private static final String GANGLIA="ganglia";
@@ -43,7 +43,9 @@ public class PopulatorMetricsReportingManagerService {
     private GangliaReporter gangliaReporter = null;
     private long metricsReportIntervalSec;
 
-    public PopulatorMetricsReportingManagerService() {
+    protected static Instrumentation instrumentation = null;
+
+    public PopulatorMetricsReportingManager() {
         METRICS_HOST = ConfigurationService.get("METRICS_HOST");
         METRICS_PREFIX = ConfigurationService.get("METRICS_PREFIX");
         METRICS_REPORT_INTERVAL_SEC = ConfigurationService.getLong("METRICS_REPORT_INTERVAL_SEC");
@@ -51,7 +53,6 @@ public class PopulatorMetricsReportingManagerService {
     }
 
     public void init(MetricRegistry metricRegistry) {
-
         if(ConfigurationService.get(METRICS_SERVER_NAME).equals(GRAPHITE)) {
             Graphite graphite = new Graphite(new InetSocketAddress(METRICS_HOST, METRICS_PORT));
             graphiteReporter = GraphiteReporter.forRegistry(metricRegistry).prefixedWith(METRICS_PREFIX)
@@ -64,6 +65,7 @@ public class PopulatorMetricsReportingManagerService {
                 ganglia = new GMetric(METRICS_HOST, METRICS_PORT, GMetric.UDPAddressingMode.MULTICAST, 1);
             } catch (IOException e) {
                 e.printStackTrace();
+                throw new RuntimeException(e);
             }
             gangliaReporter = GangliaReporter.forRegistry(metricRegistry)
                     .convertRatesTo(TimeUnit.SECONDS)
@@ -94,7 +96,7 @@ public class PopulatorMetricsReportingManagerService {
         }
         if (gangliaReporter != null) {
             try {
-                // reporting final metrics into graphite before stopping
+                // reporting final metrics into ganglia before stopping
                 gangliaReporter.report();
             } finally {
                 gangliaReporter.stop();
