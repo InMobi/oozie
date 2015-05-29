@@ -53,6 +53,8 @@ public class Instrumentation {
     private Map<String, Map<String, Element<Timer>>> timers;
     private Map<String, Map<String, Element<Variable>>> variables;
     private Map<String, Map<String, Element<Double>>> samplers;
+    private OozieMonitoringComponent oozieMonitoringComponent;
+    private boolean oozieFunctionalMonitoringEnable;
 
     /**
      * Instrumentation constructor.
@@ -72,6 +74,10 @@ public class Instrumentation {
         all.put("samplers", (Map<String, Map<String, Object>>) (Object) samplers);
         all.put("counters", (Map<String, Map<String, Object>>) (Object) counters);
         all.put("timers", (Map<String, Map<String, Object>>) (Object) timers);
+        oozieFunctionalMonitoringEnable = ConfigurationService.getBoolean("oozie.functional_monitoring.enable");
+        if(oozieFunctionalMonitoringEnable) {
+            oozieMonitoringComponent = new OozieMonitoringComponent();
+        }
     }
 
     /**
@@ -509,6 +515,9 @@ public class Instrumentation {
                 if (counter == null) {
                     counter = new Counter();
                     map.put(name, counter);
+                    if(oozieFunctionalMonitoringEnable) {
+                        oozieMonitoringComponent.initializeCounter(group, name);
+                    }
                 }
             }
             finally {
@@ -516,6 +525,9 @@ public class Instrumentation {
             }
         }
         counter.addAndGet(count);
+        if(oozieFunctionalMonitoringEnable) {
+            oozieMonitoringComponent.incrCounter(group, name, count);
+        }
     }
 
     /**
@@ -552,6 +564,9 @@ public class Instrumentation {
             throw new RuntimeException(XLog.format("Variable group=[{0}] name=[{1}] already defined", group, name));
         }
         map.put(name, variable);
+        if(oozieFunctionalMonitoringEnable) {
+            oozieMonitoringComponent.monitorVariable(group, name, variable);
+        }
     }
 
     /**
@@ -784,6 +799,9 @@ public class Instrumentation {
             }
             Sampler sampler = new Sampler(period, interval, variable);
             map.put(name, sampler);
+            if(oozieFunctionalMonitoringEnable) {
+                oozieMonitoringComponent.monitorSampler(group, name, variable);
+            }
             scheduler.scheduleAtFixedRate(sampler, 0, sampler.getSamplingInterval(), TimeUnit.SECONDS);
         }
         finally {
