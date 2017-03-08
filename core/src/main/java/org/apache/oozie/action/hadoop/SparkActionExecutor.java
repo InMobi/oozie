@@ -35,9 +35,7 @@ import java.util.List;
 import java.util.Map;
 
 public class SparkActionExecutor extends JavaActionExecutor {
-    public static final String SPARK_MAIN_CLASS_NAME_1 = "org.apache.oozie.action.hadoop.SparkMain";
-    public static final String SPARK_MAIN_CLASS_NAME_2 = "org.apache.oozie.action.hadoop.SparkMain2";
-
+    public static final String SPARK_MAIN_CLASS_NAME = "org.apache.oozie.action.hadoop.SparkMain";
     public static final String TASK_USER_PRECEDENCE = "mapreduce.task.classpath.user.precedence"; // hadoop-2
     public static final String TASK_USER_CLASSPATH_PRECEDENCE = "mapreduce.user.classpath.first";  // hadoop-1
     public static final String SPARK_MASTER = "oozie.spark.master";
@@ -48,8 +46,6 @@ public class SparkActionExecutor extends JavaActionExecutor {
     public static final String SPARK_JAR = "oozie.spark.jar";
     public static final String MAPRED_CHILD_ENV = "mapred.child.env";
     private static final String CONF_OOZIE_SPARK_SETUP_HADOOP_CONF_DIR = "oozie.action.spark.setup.hadoop.conf.dir";
-
-    private String sparkVersion;
 
     public SparkActionExecutor() {
         super("spark");
@@ -96,8 +92,6 @@ public class SparkActionExecutor extends JavaActionExecutor {
             actionConf.set(SPARK_OPTS, sparkOptsSb.toString().trim());
         }
 
-        sparkVersion = actionXml.getChildTextTrim("version" ,ns);
-
         // Setting if SparkMain should setup hadoop config *-site.xml
         boolean setupHadoopConf = actionConf.getBoolean(CONF_OOZIE_SPARK_SETUP_HADOOP_CONF_DIR,
                 ConfigurationService.getBoolean(CONF_OOZIE_SPARK_SETUP_HADOOP_CONF_DIR));
@@ -143,11 +137,7 @@ public class SparkActionExecutor extends JavaActionExecutor {
     public List<Class> getLauncherClasses() {
         List<Class> classes = new ArrayList<Class>();
         try {
-            if("2".equals(sparkVersion)){
-                classes.add(Class.forName(SPARK_MAIN_CLASS_NAME_2));
-            }else {
-                classes.add(Class.forName(SPARK_MAIN_CLASS_NAME_1));
-            }
+            classes.add(Class.forName(SPARK_MAIN_CLASS_NAME));
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("Class not found", e);
         }
@@ -163,20 +153,11 @@ public class SparkActionExecutor extends JavaActionExecutor {
      */
     @Override
     protected String getDefaultShareLibName(Element actionXml) {
-        if("2".equals(sparkVersion)) {
-            return "spark2";
-        }else{
-            return "spark";
-        }
+        return "spark";
     }
 
     @Override
     protected String getLauncherMain(Configuration launcherConf, Element actionXml) {
-        if("2".equals(sparkVersion)){
-            return launcherConf.get(LauncherMapper.CONF_OOZIE_ACTION_MAIN_CLASS, SPARK_MAIN_CLASS_NAME_2);
-
-        }else {
-            return launcherConf.get(LauncherMapper.CONF_OOZIE_ACTION_MAIN_CLASS, SPARK_MAIN_CLASS_NAME_1);
-        }
+        return launcherConf.get(LauncherMapper.CONF_OOZIE_ACTION_MAIN_CLASS, SPARK_MAIN_CLASS_NAME);
     }
 }

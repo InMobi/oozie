@@ -40,7 +40,6 @@
         <module>oozie</module>
         <module>distcp</module>
         <module>spark</module>
-        <module>spark2</module>
     </modules>
 
     <build>
