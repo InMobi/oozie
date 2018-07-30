@@ -1606,7 +1606,7 @@
                 <dependency>
                     <groupId>com.inmobi.grid</groupId>
                     <artifactId>fs-extensions</artifactId>
-                    <version>0.4</version>
+                    <version>0.8</version>
                     <classifier>azure-uber</classifier>
                 </dependency>
 
