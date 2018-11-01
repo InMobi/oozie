@@ -37,6 +37,7 @@ import java.util.Map;
 public class SparkActionExecutor extends JavaActionExecutor {
     public static final String SPARK_MAIN_CLASS_NAME_1 = "org.apache.oozie.action.hadoop.SparkMain";
     public static final String SPARK_MAIN_CLASS_NAME_2 = "org.apache.oozie.action.hadoop.SparkMain2";
+    public static final String SPARK_MAIN_CLASS_NAME_LATEST = "org.apache.oozie.action.hadoop.SparkMainLatest";
 
     public static final String TASK_USER_PRECEDENCE = "mapreduce.task.classpath.user.precedence"; // hadoop-2
     public static final String TASK_USER_CLASSPATH_PRECEDENCE = "mapreduce.user.classpath.first";  // hadoop-1
@@ -143,9 +144,11 @@ public class SparkActionExecutor extends JavaActionExecutor {
     public List<Class> getLauncherClasses() {
         List<Class> classes = new ArrayList<Class>();
         try {
-            if("2".equals(sparkVersion)){
+            if("0".equals(sparkVersion)){
+                classes.add(Class.forName(SPARK_MAIN_CLASS_NAME_LATEST));
+            } else if("2".equals(sparkVersion)){
                 classes.add(Class.forName(SPARK_MAIN_CLASS_NAME_2));
-            }else {
+            } else {
                 classes.add(Class.forName(SPARK_MAIN_CLASS_NAME_1));
             }
         } catch (ClassNotFoundException e) {
@@ -163,19 +166,24 @@ public class SparkActionExecutor extends JavaActionExecutor {
      */
     @Override
     protected String getDefaultShareLibName(Element actionXml) {
-        if("2".equals(sparkVersion)) {
+        if("0".equals(sparkVersion)) {
+            return "sparkLatest";
+        } else if("2".equals(sparkVersion)) {
             return "spark2";
-        }else{
+        } else{
             return "spark";
         }
     }
 
     @Override
     protected String getLauncherMain(Configuration launcherConf, Element actionXml) {
-        if("2".equals(sparkVersion)){
+        if("0".equals(sparkVersion)){
+            return launcherConf.get(LauncherMapper.CONF_OOZIE_ACTION_MAIN_CLASS, SPARK_MAIN_CLASS_NAME_LATEST);
+
+        } else if("2".equals(sparkVersion)){
             return launcherConf.get(LauncherMapper.CONF_OOZIE_ACTION_MAIN_CLASS, SPARK_MAIN_CLASS_NAME_2);
 
-        }else {
+        } else {
             return launcherConf.get(LauncherMapper.CONF_OOZIE_ACTION_MAIN_CLASS, SPARK_MAIN_CLASS_NAME_1);
         }
     }

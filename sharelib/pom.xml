@@ -41,6 +41,7 @@
         <module>distcp</module>
         <module>spark</module>
         <module>spark2</module>
+        <module>sparkLatest</module>
     </modules>
 
     <build>

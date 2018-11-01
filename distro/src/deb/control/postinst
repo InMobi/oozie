@@ -105,7 +105,7 @@ if [ "$DEPLOYMENT_MODE" == "ONLY_SHARELIB" ]; then
     fi
 
     DISTRO=$(ls /opt/inmobi/${OOZIE_VERSION}|grep distro|grep tar.gz|grep $OOZIE_VERSION)
-    sudo mkdir $OOZIE_BASE/$OOZIE_SHARELIB
+    sudo mkdir -p $OOZIE_BASE/$OOZIE_SHARELIB
     sudo tar -xvf /opt/inmobi/${OOZIE_VERSION}/$DISTRO -C $OOZIE_BASE/$OOZIE_SHARELIB
 
     cd $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION
@@ -118,6 +118,7 @@ if [ "$DEPLOYMENT_MODE" == "ONLY_SHARELIB" ]; then
     sudo mkdir -p $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/hive2/
     sudo mkdir -p $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/spark/
     sudo mkdir -p $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/spark2/
+    sudo mkdir -p $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/sparkLatest/
     cd $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION
 
     sudo cp $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/share/lib/oozie/* $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/oozie/ || true
@@ -126,6 +127,7 @@ if [ "$DEPLOYMENT_MODE" == "ONLY_SHARELIB" ]; then
     sudo cp $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/share/lib/hive2/* $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/hive2/ || true
     sudo cp $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/share/lib/spark/* $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/spark/ || true
     sudo cp $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/share/lib/spark2/* $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/spark2/ || true
+    sudo cp $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/share/lib/sparkLatest/* $OOZIE_BASE/$OOZIE_SHARELIB/$OOZIE_VERSION/temp_sharelib/lib/sparkLatest/ || true
 
     sudo chown -R oozie:oozie $OOZIE_CURRENT/ || true
     sudo chown -R oozie $OOZIE_CURRENT/ || true
@@ -152,7 +154,7 @@ else
     sudo mv $OOZIE_BASE/$OOZIE_VERSION $OOZIE_CURRENT
 
     cd $OOZIE_CURRENT
-    sudo mkdir $OOZIE_CURRENT/libext
+    sudo mkdir -p $OOZIE_CURRENT/libext
     cd $OOZIE_CURRENT/libext
     sudo cp $HADOOP_CLIENT/*.jar . || true
     sudo cp $HADOOP_CLIENT/lib/*.jar . || true
@@ -189,6 +191,7 @@ else
     sudo mkdir -p $OOZIE_CURRENT/temp_sharelib/lib/hive2/
     sudo mkdir -p $OOZIE_CURRENT/temp_sharelib/lib/spark/
     sudo mkdir -p $OOZIE_CURRENT/temp_sharelib/lib/spark2/
+    sudo mkdir -p $OOZIE_CURRENT/temp_sharelib/lib/sparkLatest/
     sudo mkdir -p $OOZIE_CURRENT/temp_sharelib/lib/distcp/
 
     cd $OOZIE_CURRENT
@@ -199,6 +202,7 @@ else
     sudo cp $OOZIE_CURRENT/share/lib/hive2/* $OOZIE_CURRENT/temp_sharelib/lib/hive2/ || true
     sudo cp $OOZIE_CURRENT/share/lib/spark/* $OOZIE_CURRENT/temp_sharelib/lib/spark/ || true
     sudo cp $OOZIE_CURRENT/share/lib/spark2/* $OOZIE_CURRENT/temp_sharelib/lib/spark2/ || true
+    sudo cp $OOZIE_CURRENT/share/lib/sparkLatest/* $OOZIE_CURRENT/temp_sharelib/lib/sparkLatest/ || true
     sudo cp $OOZIE_CURRENT/libext/s4*jar $OOZIE_CURRENT/temp_sharelib/lib/oozie/ || true
     sudo cp $OOZIE_CURRENT/libext/s4*jar $OOZIE_CURRENT/libext/ || true
     sudo cp $OOZIE_CURRENT/libext/falcon*jar $OOZIE_CURRENT/libext/ || true
